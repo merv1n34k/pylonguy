@@ -1,6 +1,7 @@
+"""Minimal camera wrapper - only essential operations"""
 import numpy as np
 from pypylon import pylon
-from typing import Optional, Tuple, List
+from typing import Optional
 import logging
 
 log = logging.getLogger("pylon_gui")
@@ -9,167 +10,143 @@ class Camera:
     def __init__(self):
         self.device = None
 
-    def connect(self) -> bool:
-        """Connect to first available camera"""
+    def open(self) -> bool:
+        """Open first available camera"""
         try:
             tlf = pylon.TlFactory.GetInstance()
             devices = tlf.EnumerateDevices()
             if not devices:
-                log.warning("No camera found")
                 return False
 
             self.device = pylon.InstantCamera(tlf.CreateDevice(devices[0]))
             self.device.Open()
-            log.info(f"Connected to {self.device.GetDeviceInfo().GetModelName()}")
             return True
-        except Exception as e:
-            log.error(f"Connection failed: {e}")
+        except:
             return False
 
-    def disconnect(self):
-        """Disconnect camera"""
+    def close(self):
+        """Close camera"""
         if self.device:
             try:
                 if self.device.IsGrabbing():
                     self.device.StopGrabbing()
                 if self.device.IsOpen():
                     self.device.Close()
-                log.info("Camera disconnected")
-            except Exception as e:
-                log.error(f"Disconnect error: {e}")
-            finally:
-                self.device = None
-
-    def is_connected(self) -> bool:
-        return self.device and self.device.IsOpen()
+            except:
+                pass
+            self.device = None
 
     def start_grabbing(self):
-        if self.is_connected() and not self.device.IsGrabbing():
+        """Start continuous grabbing"""
+        if self.device and not self.device.IsGrabbing():
             self.device.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
 
     def stop_grabbing(self):
+        """Stop grabbing"""
         if self.device and self.device.IsGrabbing():
             self.device.StopGrabbing()
 
-    def grab_frame(self, timeout_ms=1000) -> Optional[np.ndarray]:
-        """Grab single raw frame from camera"""
-        if not self.is_connected():
+    def grab_frame(self) -> Optional[np.ndarray]:
+        """Grab single raw frame"""
+        if not self.device:
             return None
 
         try:
-            self.start_grabbing()
-            result = self.device.RetrieveResult(timeout_ms, pylon.TimeoutHandling_Return)
+            if not self.device.IsGrabbing():
+                self.start_grabbing()
+
+            result = self.device.RetrieveResult(1000, pylon.TimeoutHandling_Return)
             if result.GrabSucceeded():
-                # Return raw array - no conversion
                 arr = result.Array.copy()
                 result.Release()
                 return arr
             result.Release()
-        except Exception as e:
-            log.error(f"Grab failed: {e}")
+        except:
+            pass
         return None
 
-    def get_pixel_format(self) -> str:
-        """Get current pixel format"""
-        if not self.is_connected():
-            return "Unknown"
-        try:
-            return self.device.PixelFormat.ToString()
-        except:
-            return "Unknown"
-
-    def get_size(self) -> Tuple[int, int]:
-        """Get current ROI width and height"""
-        if not self.is_connected():
-            return 640, 480
-        try:
-            width = self.get_parameter("Width", 640)
-            height = self.get_parameter("Height", 480)
-            return int(width), int(height)
-        except:
-            return 640, 480
-
-    def set_parameter(self, name: str, value):
-        """Set camera parameter safely within limits"""
-        if not self.is_connected():
+    def set_roi(self, width: int, height: int, offset_x: int = 0, offset_y: int = 0):
+        """Set camera ROI"""
+        if not self.device:
             return
 
         try:
-            param = getattr(self.device, name, None)
-            if param is None or not param.IsWritable():
-                return
+            # Stop grabbing to change ROI
+            was_grabbing = self.device.IsGrabbing()
+            if was_grabbing:
+                self.stop_grabbing()
 
-            if hasattr(param, 'Min') and hasattr(param, 'Max'):
-                value = max(param.Min, min(param.Max, value))
-                if hasattr(param, 'Inc') and param.Inc > 0:
-                    value = round(value / param.Inc) * param.Inc
-                    value = max(param.Min, min(param.Max, value))
+            # Reset offsets to allow maximum width/height
+            if hasattr(self.device, 'OffsetX'):
+                self.device.OffsetX.Value = 0
+            if hasattr(self.device, 'OffsetY'):
+                self.device.OffsetY.Value = 0
 
-            param.Value = value
-            log.info(f"Set {name} = {param.Value}")
-        except Exception as e:
-            log.debug(f"Cannot set {name}: {e}")
+            # Set dimensions
+            if hasattr(self.device, 'Width'):
+                self.device.Width.Value = width
+            if hasattr(self.device, 'Height'):
+                self.device.Height.Value = height
 
-    def get_parameter(self, name: str, default=None):
-        """Get camera parameter safely"""
-        if not self.is_connected():
-            return default
-        try:
-            param = getattr(self.device, name, None)
-            if param and param.IsReadable():
-                return param.Value
-            return default
-        except:
-            return default
+            # Set offsets
+            if hasattr(self.device, 'OffsetX'):
+                self.device.OffsetX.Value = offset_x
+            if hasattr(self.device, 'OffsetY'):
+                self.device.OffsetY.Value = offset_y
 
-    def get_parameter_range(self, name: str) -> Tuple[Optional[float], Optional[float], Optional[float]]:
-        """Get min/max/increment for numeric parameter"""
-        if not self.is_connected():
-            return None, None, None
-        try:
-            param = getattr(self.device, name, None)
-            if param and hasattr(param, 'Min') and hasattr(param, 'Max'):
-                inc = param.Inc if hasattr(param, 'Inc') else None
-                return param.Min, param.Max, inc
+            if was_grabbing:
+                self.start_grabbing()
         except:
             pass
-        return None, None, None
 
-    def get_enum_values(self, name: str) -> List[str]:
-        """Get available values for enum parameter"""
-        if not self.is_connected():
-            return []
+    def get_roi(self) -> tuple:
+        """Get current ROI (width, height, offset_x, offset_y)"""
+        if not self.device:
+            return 640, 480, 0, 0
+
         try:
-            param = getattr(self.device, name, None)
-            if param and hasattr(param, 'Symbolics'):
-                return list(param.Symbolics)
+            w = self.device.Width.Value if hasattr(self.device, 'Width') else 640
+            h = self.device.Height.Value if hasattr(self.device, 'Height') else 480
+            ox = self.device.OffsetX.Value if hasattr(self.device, 'OffsetX') else 0
+            oy = self.device.OffsetY.Value if hasattr(self.device, 'OffsetY') else 0
+            return (w, h, ox, oy)
         except:
-            pass
-        return []
+            return 640, 480, 0, 0
 
-    def set_enum_parameter(self, name: str, value: str):
-        """Set enum parameter by string value"""
-        if not self.is_connected():
-            return
+    def set_exposure(self, microseconds: float):
+        """Set exposure time"""
+        if self.device:
+            try:
+                # Try to set exposure auto off first
+                if hasattr(self.device, 'ExposureAuto'):
+                    try:
+                        self.device.ExposureAuto.Value = 'Off'
+                    except:
+                        pass
 
-        try:
-            param = getattr(self.device, name, None)
-            if param and param.IsWritable():
-                param.FromString(value)
-                log.info(f"Set {name} = {value}")
-        except Exception as e:
-            log.debug(f"Cannot set enum {name}: {e}")
+                # Try different exposure parameter names
+                if hasattr(self.device, 'ExposureTime'):
+                    self.device.ExposureTime.Value = microseconds
+                elif hasattr(self.device, 'ExposureTimeAbs'):
+                    self.device.ExposureTimeAbs.Value = microseconds
+            except:
+                pass
 
-    def validate_and_get_default(self, name: str, default_value):
-        """Get a valid default value within camera limits"""
-        if not self.is_connected():
-            return default_value
+    def set_gain(self, gain: float):
+        """Set gain"""
+        if self.device:
+            try:
+                # Try to set gain auto off first
+                if hasattr(self.device, 'GainAuto'):
+                    try:
+                        self.device.GainAuto.Value = 'Off'
+                    except:
+                        pass
 
-        min_val, max_val, inc = self.get_parameter_range(name)
-        if min_val is not None and max_val is not None:
-            value = max(min_val, min(max_val, default_value))
-            if inc and inc > 0:
-                value = round(value / inc) * inc
-                value = max(min_val, min(max_val, value))
-            return value
-        return default_value
+                # Try different gain parameter names
+                if hasattr(self.device, 'Gain'):
+                    self.device.Gain.Value = gain
+                elif hasattr(self.device, 'GainRaw'):
+                    self.device.GainRaw.Value = int(gain)
+            except:
+                pass
