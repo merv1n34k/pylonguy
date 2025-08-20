@@ -7,9 +7,9 @@ A clean, simple GUI for Basler cameras using pypylon SDK and PyQt5.
 - **Live Preview** - Real-time camera feed with toggle control
 - **Image Capture** - Save single frames as PNG images
 - **Video Recording** - Record video with FFmpeg (H.264/MP4)
-- **Scrollable Settings** - Clean interface for camera configuration
+- **Area selection** - Select area on the preview window to see approximate area
 - **Live Log** - Real-time status and error messages
-- **Time-stretch Recording** - Camera captures at native fps, video plays at configured fps
+- **Fine FPS control** - set the number of frame rate for capturing and recording individually, perfect for slow motion capturing.
 
 ## Installation
 
@@ -45,15 +45,13 @@ The video fps setting controls playback speed, not capture rate:
 
 ## File Structure
 
-- `app.py` - Main entry point
+- `app.py` - Main app logic
 - `gui.py` - PyQt5 user interface
-- `camera.py` - Simplified camera wrapper
+- `camera.py` - Simple camera wrapper
 - `video_writer.py` - FFmpeg video recording
 - `config.py` - Configuration management
 
-## Notes
+## License
 
-- Application starts even without camera connected
-- Settings are validated against camera limits automatically
-- Output directories are created automatically
-- Logs show frame counts during recording
+Distributed under the MIT License. See `LICENSE` for more information.
+
