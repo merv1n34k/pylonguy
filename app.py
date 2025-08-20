@@ -19,6 +19,7 @@ log = logging.getLogger("pylon_gui")
 class CameraThread(QThread):
     """Thread for continuous frame grabbing"""
     frame_signal = pyqtSignal(np.ndarray)
+    stopped_signal = pyqtSignal()  # Signal when recording stops due to limits
 
     def __init__(self, camera):
         super().__init__()
@@ -28,6 +29,8 @@ class CameraThread(QThread):
         self.writer = None
         self.frame_count = 0
         self.record_start_time = 0
+        self.max_frames = None
+        self.max_time = None
 
     def run(self):
         self.running = True
@@ -41,6 +44,22 @@ class CameraThread(QThread):
                 if self.recording and self.writer:
                     if self.writer.write(frame):
                         self.frame_count += 1
+
+                        # Check frame limit
+                        if self.max_frames and self.frame_count >= self.max_frames:
+                            log.info(f"Reached frame limit: {self.max_frames}")
+                            self.stopped_signal.emit()
+                            self.recording = False
+                            break
+
+                        # Check time limit
+                        if self.max_time:
+                            elapsed = time.time() - self.record_start_time
+                            if elapsed >= self.max_time:
+                                log.info(f"Reached time limit: {self.max_time}s")
+                                self.stopped_signal.emit()
+                                self.recording = False
+                                break
             else:
                 self.msleep(30)
 
@@ -51,10 +70,12 @@ class CameraThread(QThread):
             self.writer = None
         self.wait()
 
-    def start_recording(self, writer):
+    def start_recording(self, writer, max_frames=None, max_time=None):
         import time
         self.writer = writer
         self.frame_count = 0
+        self.max_frames = max_frames
+        self.max_time = max_time
         self.record_start_time = time.time()
         if self.writer.start():
             self.recording = True
@@ -139,7 +160,21 @@ class App:
         self.config.offset_y = self.window.settings.offset_y.value()
         self.config.exposure = self.window.settings.exposure.value()
         self.config.gain = self.window.settings.gain.value()
+        self.config.sensor_mode = self.window.settings.sensor_mode.currentText()
+        self.config.framerate_enable = self.window.settings.framerate_enable.isChecked()
+        self.config.framerate = self.window.settings.framerate.value()
         self.config.video_fps = self.window.settings.video_fps.value()
+
+        # Recording limits
+        if self.window.settings.limit_frames_enable.isChecked():
+            self.config.limit_frames = self.window.settings.limit_frames.value()
+        else:
+            self.config.limit_frames = None
+
+        if self.window.settings.limit_time_enable.isChecked():
+            self.config.limit_time = self.window.settings.limit_time.value()
+        else:
+            self.config.limit_time = None
 
         # Apply to camera
         self.camera.set_roi(
@@ -150,6 +185,8 @@ class App:
         )
         self.camera.set_exposure(self.config.exposure)
         self.camera.set_gain(self.config.gain)
+        self.camera.set_sensor_mode(self.config.sensor_mode)
+        self.camera.set_framerate(self.config.framerate_enable, self.config.framerate)
 
         log.info(f"Applied - ROI: {self.config.width}x{self.config.height}")
 
@@ -168,6 +205,7 @@ class App:
 
         self.thread = CameraThread(self.camera)
         self.thread.frame_signal.connect(self.display_frame)
+        self.thread.stopped_signal.connect(self.on_recording_stopped)
         self.thread.start()
 
         self.window.preview.btn_live.setText("Stop Live")
@@ -239,9 +277,14 @@ class App:
             path = self.config.get_video_path()
             writer = VideoWriter(path, w, h, self.config.video_fps)
 
-            if self.thread.start_recording(writer):
+            # Start with limits if set
+            if self.thread.start_recording(writer, self.config.limit_frames, self.config.limit_time):
                 self.window.preview.btn_record.setText("Stop Recording")
                 log.info(f"Recording: {path} ({w}x{h} @ {self.config.video_fps}fps)")
+                if self.config.limit_frames:
+                    log.info(f"Frame limit: {self.config.limit_frames}")
+                if self.config.limit_time:
+                    log.info(f"Time limit: {self.config.limit_time}s")
             else:
                 log.error("Failed to start recording")
 
@@ -251,6 +294,18 @@ class App:
             frames = self.thread.stop_recording()
             self.window.preview.btn_record.setText("Record")
             log.info(f"Recorded {frames} frames")
+
+    def on_recording_stopped(self):
+        """Handler for when recording stops automatically due to limits"""
+        # Update button text
+        self.window.preview.btn_record.setText("Record")
+
+        # Log that recording stopped
+        if self.thread and hasattr(self.thread, 'frame_count'):
+            frames = self.thread.frame_count
+            log.info(f"Recording auto-stopped: {frames} frames recorded")
+        else:
+            log.info("Recording auto-stopped")
 
     def update_status(self):
         """Update status bar"""

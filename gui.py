@@ -164,7 +164,7 @@ class SettingsWidget(QWidget):
         group.setLayout(roi_layout)
         layout.addWidget(group)
 
-        # Exposure & Gain
+        # Acquisition
         group = QGroupBox("Acquisition")
         acq_layout = QFormLayout()
         self.exposure = QDoubleSpinBox()
@@ -174,8 +174,31 @@ class SettingsWidget(QWidget):
         self.gain = QDoubleSpinBox()
         self.gain.setRange(0, 48)
         self.gain.setValue(0)
+
+        # Sensor readout mode
+        self.sensor_mode = QComboBox()
+        self.sensor_mode.addItems(["Normal", "Fast"])
+
+        # Acquisition framerate (optional)
+        self.framerate_enable = QCheckBox("Enable")
+        self.framerate = QDoubleSpinBox()
+        self.framerate.setRange(1, 1000)
+        self.framerate.setValue(30)
+        self.framerate.setSuffix(" Hz")
+        self.framerate.setEnabled(False)
+        self.framerate_enable.toggled.connect(self.framerate.setEnabled)
+
+        framerate_widget = QWidget()
+        framerate_layout = QHBoxLayout()
+        framerate_layout.setContentsMargins(0, 0, 0, 0)
+        framerate_layout.addWidget(self.framerate_enable)
+        framerate_layout.addWidget(self.framerate)
+        framerate_widget.setLayout(framerate_layout)
+
         acq_layout.addRow("Exposure:", self.exposure)
         acq_layout.addRow("Gain:", self.gain)
+        acq_layout.addRow("Sensor Mode:", self.sensor_mode)
+        acq_layout.addRow("Framerate:", framerate_widget)
         group.setLayout(acq_layout)
         layout.addWidget(group)
 
@@ -188,6 +211,47 @@ class SettingsWidget(QWidget):
         self.video_fps.setSuffix(" fps")
         out_layout.addRow("Video FPS:", self.video_fps)
         group.setLayout(out_layout)
+        layout.addWidget(group)
+
+        # Recording Limits
+        group = QGroupBox("Recording Limits (Optional)")
+        limits_layout = QFormLayout()
+
+        # Frame limit
+        self.limit_frames_enable = QCheckBox("Stop after")
+        self.limit_frames = QSpinBox()
+        self.limit_frames.setRange(1, 1000000)
+        self.limit_frames.setValue(1000)
+        self.limit_frames.setSuffix(" frames")
+        self.limit_frames.setEnabled(False)
+        self.limit_frames_enable.toggled.connect(self.limit_frames.setEnabled)
+
+        frames_widget = QWidget()
+        frames_layout = QHBoxLayout()
+        frames_layout.setContentsMargins(0, 0, 0, 0)
+        frames_layout.addWidget(self.limit_frames_enable)
+        frames_layout.addWidget(self.limit_frames)
+        frames_widget.setLayout(frames_layout)
+
+        # Time limit
+        self.limit_time_enable = QCheckBox("Stop after")
+        self.limit_time = QDoubleSpinBox()
+        self.limit_time.setRange(0.1, 3600)
+        self.limit_time.setValue(10)
+        self.limit_time.setSuffix(" seconds")
+        self.limit_time.setEnabled(False)
+        self.limit_time_enable.toggled.connect(self.limit_time.setEnabled)
+
+        time_widget = QWidget()
+        time_layout = QHBoxLayout()
+        time_layout.setContentsMargins(0, 0, 0, 0)
+        time_layout.addWidget(self.limit_time_enable)
+        time_layout.addWidget(self.limit_time)
+        time_widget.setLayout(time_layout)
+
+        limits_layout.addRow("Frames:", frames_widget)
+        limits_layout.addRow("Time:", time_widget)
+        group.setLayout(limits_layout)
         layout.addWidget(group)
 
         # Apply button

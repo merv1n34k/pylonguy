@@ -13,9 +13,16 @@ class Config:
         # Acquisition
         self.exposure = 10000.0  # microseconds
         self.gain = 0.0
+        self.sensor_mode = "Normal"
+        self.framerate_enable = False
+        self.framerate = 30.0
 
         # Video
         self.video_fps = 24.0
+
+        # Recording limits
+        self.limit_frames = None
+        self.limit_time = None
 
         # Paths
         self.output_dir = Path("./output")

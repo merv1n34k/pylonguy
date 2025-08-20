@@ -150,3 +150,29 @@ class Camera:
                     self.device.GainRaw.Value = int(gain)
             except:
                 pass
+
+    def set_sensor_mode(self, mode: str):
+        """Set sensor readout mode (Normal/Fast)"""
+        if self.device:
+            try:
+                if hasattr(self.device, 'SensorReadoutMode'):
+                    self.device.SensorReadoutMode.Value = mode
+            except:
+                pass
+
+    def set_framerate(self, enable: bool, fps: float = 30.0):
+        """Set acquisition framerate"""
+        if self.device:
+            try:
+                # Enable/disable framerate control
+                if hasattr(self.device, 'AcquisitionFrameRateEnable'):
+                    self.device.AcquisitionFrameRateEnable.Value = enable
+
+                # Set framerate if enabled
+                if enable:
+                    if hasattr(self.device, 'AcquisitionFrameRate'):
+                        self.device.AcquisitionFrameRate.Value = fps
+                    elif hasattr(self.device, 'AcquisitionFrameRateAbs'):
+                        self.device.AcquisitionFrameRateAbs.Value = fps
+            except:
+                pass
