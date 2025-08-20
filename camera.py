@@ -4,7 +4,7 @@ from pypylon import pylon
 from typing import Optional
 import logging
 
-log = logging.getLogger("pylon_gui")
+log = logging.getLogger("pylonguy")
 
 class Camera:
     def __init__(self):

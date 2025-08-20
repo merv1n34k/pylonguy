@@ -288,7 +288,7 @@ class MainWindow(QMainWindow):
     """Main application window"""
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Pylon Camera GUI")
+        self.setWindowTitle("PylonGuy")
         self.setGeometry(100, 100, 1200, 800)
 
         # Create widgets

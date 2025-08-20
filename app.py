@@ -14,7 +14,7 @@ from config import Config
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
-log = logging.getLogger("pylon_gui")
+log = logging.getLogger("pylonguy")
 
 class CameraThread(QThread):
     """Thread for continuous frame grabbing"""
