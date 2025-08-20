@@ -20,6 +20,8 @@ class Camera:
 
             self.device = pylon.InstantCamera(tlf.CreateDevice(devices[0]))
             self.device.Open()
+
+            self.device.DeviceLinkThroughputLimitMode.SetValue("Off")
             return True
         except:
             return False
@@ -37,9 +39,11 @@ class Camera:
             self.device = None
 
     def start_grabbing(self):
-        """Start continuous grabbing"""
+        """Start continuous grabbing with optimized settings for high speed"""
         if self.device and not self.device.IsGrabbing():
-            self.device.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
+            # Use OneByOne strategy for recording to ensure no frames are dropped
+            # LatestImageOnly can drop frames which is fine for preview but not recording
+            self.device.StartGrabbing(pylon.GrabStrategy_OneByOne)
 
     def stop_grabbing(self):
         """Stop grabbing"""
@@ -47,7 +51,7 @@ class Camera:
             self.device.StopGrabbing()
 
     def grab_frame(self) -> Optional[np.ndarray]:
-        """Grab single raw frame"""
+        """Grab single raw frame - optimized version"""
         if not self.device:
             return None
 
@@ -55,15 +59,65 @@ class Camera:
             if not self.device.IsGrabbing():
                 self.start_grabbing()
 
-            result = self.device.RetrieveResult(1000, pylon.TimeoutHandling_Return)
-            if result.GrabSucceeded():
-                arr = result.Array.copy()
+            # Reduced timeout for faster response
+            result = self.device.RetrieveResult(100, pylon.TimeoutHandling_Return)
+            if result and result.GrabSucceeded():
+                # CRITICAL: Avoid copy for high-speed recording
+                # Use GetArray() instead of Array for zero-copy access
+                # Only copy if we need to keep the frame beyond the result lifetime
+                arr = result.GetArray()  # Zero-copy numpy array
+
+                # For recording, we immediately write, so we can use zero-copy
+                # For display, we need a copy since result will be released
+                if hasattr(self, '_recording_mode') and self._recording_mode:
+                    # Return view for recording (faster)
+                    frame = arr
+                else:
+                    # Return copy for display (safer)
+                    frame = arr.copy()
+
                 result.Release()
-                return arr
-            result.Release()
-        except:
+                return frame
+            if result:
+                result.Release()
+        except Exception as e:
             pass
         return None
+
+    def set_high_speed_mode(self, enable: bool):
+        """Enable optimizations for high-speed recording"""
+        if not self.device:
+            return
+
+        self._recording_mode = enable
+
+        try:
+            # Optimize camera for high-speed capture
+            if enable:
+                # Disable all auto features for consistent high speed
+                if hasattr(self.device, 'ExposureAuto'):
+                    self.device.ExposureAuto.Value = 'Off'
+                if hasattr(self.device, 'GainAuto'):
+                    self.device.GainAuto.Value = 'Off'
+
+                # Enable frame burst mode if available
+                if hasattr(self.device, 'AcquisitionBurstFrameCount'):
+                    self.device.AcquisitionBurstFrameCount.Value = 100  # Grab in bursts
+
+                # Optimize packet size for GigE cameras
+                if hasattr(self.device, 'GevSCPSPacketSize'):
+                    try:
+                        # Use jumbo frames if supported
+                        self.device.GevSCPSPacketSize.Value = 9000
+                    except:
+                        pass
+
+                # Increase stream buffer count for high-speed
+                if hasattr(self.device, 'MaxNumBuffer'):
+                    self.device.MaxNumBuffer.Value = 50  # More buffers for high speed
+
+        except Exception as e:
+            log.warning(f"Could not fully optimize for high speed: {e}")
 
     def set_roi(self, width: int, height: int, offset_x: int = 0, offset_y: int = 0):
         """Set camera ROI"""

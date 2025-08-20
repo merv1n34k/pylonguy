@@ -17,9 +17,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 log = logging.getLogger("pylonguy")
 
 class CameraThread(QThread):
-    """Thread for continuous frame grabbing"""
+    """Thread for continuous frame grabbing - optimized for high speed"""
     frame_signal = pyqtSignal(np.ndarray)
-    stopped_signal = pyqtSignal()  # Signal when recording stops due to limits
+    stopped_signal = pyqtSignal()
+    stats_signal = pyqtSignal(int, float)  # frames, fps
 
     def __init__(self, camera):
         super().__init__()
@@ -31,37 +32,55 @@ class CameraThread(QThread):
         self.record_start_time = 0
         self.max_frames = None
         self.max_time = None
+        self.display_interval = 30  # Show every Nth frame when recording
+        self.last_stats_time = 0
+        self.stats_update_interval = 0.1  # Update stats every 100ms
 
     def run(self):
         self.running = True
+        frame_counter = 0
+
         while self.running:
             frame = self.camera.grab_frame()
             if frame is not None:
-                # Emit frame for display
-                self.frame_signal.emit(frame)
+                frame_counter += 1
 
-                # Write to video if recording
                 if self.recording and self.writer:
+                    # ALWAYS write frame when recording (no skipping for recording)
                     if self.writer.write(frame):
                         self.frame_count += 1
 
-                        # Check frame limit
+                        # Emit stats periodically (not every frame)
+                        current_time = time.time()
+                        if current_time - self.last_stats_time > self.stats_update_interval:
+                            elapsed = current_time - self.record_start_time
+                            fps = self.frame_count / max(0.001, elapsed)
+                            self.stats_signal.emit(self.frame_count, fps)
+                            self.last_stats_time = current_time
+
+                        # Check limits
                         if self.max_frames and self.frame_count >= self.max_frames:
                             log.info(f"Reached frame limit: {self.max_frames}")
                             self.stopped_signal.emit()
                             self.recording = False
                             break
 
-                        # Check time limit
                         if self.max_time:
-                            elapsed = time.time() - self.record_start_time
+                            elapsed = current_time - self.record_start_time
                             if elapsed >= self.max_time:
                                 log.info(f"Reached time limit: {self.max_time}s")
                                 self.stopped_signal.emit()
                                 self.recording = False
                                 break
+
+                    # Only emit frame for display occasionally when recording at high speed
+                    if frame_counter % self.display_interval == 0:
+                        self.frame_signal.emit(frame)
+                else:
+                    # When not recording, show every frame for smooth preview
+                    self.frame_signal.emit(frame)
             else:
-                self.msleep(30)
+                self.msleep(10)  # Shorter sleep for higher responsiveness
 
     def stop(self):
         self.running = False
@@ -77,6 +96,18 @@ class CameraThread(QThread):
         self.max_frames = max_frames
         self.max_time = max_time
         self.record_start_time = time.time()
+        self.last_stats_time = time.time()
+
+        # Adjust display interval based on expected frame rate
+        # For high-speed recording, show fewer frames
+        w, h, _, _ = self.camera.get_roi()
+        if w <= 256 and h <= 256:  # Small ROI = likely high speed
+            self.display_interval = 100  # Show every 100th frame
+        elif w <= 640 and h <= 480:
+            self.display_interval = 50
+        else:
+            self.display_interval = 30
+
         if self.writer.start():
             self.recording = True
             return True
@@ -88,6 +119,7 @@ class CameraThread(QThread):
         if self.writer:
             self.writer.stop()
             self.writer = None
+        self.display_interval = 1  # Reset to show every frame
         return frames
 
 class App:
@@ -197,6 +229,21 @@ class App:
         else:
             self.start_live()
 
+    def update_recording_stats(self, frames, fps):
+        """Update recording statistics without updating display"""
+        # This replaces the constant status updates during recording
+        status_parts = []
+
+        # Camera ROI
+        if self.camera.device:
+            w, h, _, _ = self.camera.get_roi()
+            status_parts.append(f"ROI: {w}x{h}")
+
+        # Recording stats
+        status_parts.append(f"REC: {frames} frames @ {fps:.1f} fps")
+
+        self.window.preview.status.setText(" | ".join(status_parts))
+
     def start_live(self):
         """Start live preview"""
         if not self.camera.device:
@@ -206,6 +253,7 @@ class App:
         self.thread = CameraThread(self.camera)
         self.thread.frame_signal.connect(self.display_frame)
         self.thread.stopped_signal.connect(self.on_recording_stopped)
+        self.thread.stats_signal.connect(self.update_recording_stats)  # Add this line
         self.thread.start()
 
         self.window.preview.btn_live.setText("Stop Live")
@@ -309,6 +357,10 @@ class App:
 
     def update_status(self):
         """Update status bar"""
+        # Skip during high-speed recording (stats are updated separately)
+        if self.thread and self.thread.recording:
+            return  # Stats are updated by stats_signal
+
         status_parts = []
 
         # Camera ROI
@@ -318,14 +370,9 @@ class App:
         else:
             status_parts.append("Not connected")
 
-        # Live/Recording status
-        if self.thread:
-            if self.thread.recording:
-                elapsed = time.time() - self.thread.record_start_time
-                fps = self.thread.frame_count / max(0.1, elapsed)
-                status_parts.append(f"REC: {self.thread.frame_count} frames @ {fps:.1f} fps")
-            else:
-                status_parts.append("Live")
+        # Live status
+        if self.thread and not self.thread.recording:
+            status_parts.append("Live")
 
         # Selection info
         if self.window.preview.selection:
