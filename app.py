@@ -1,179 +1,95 @@
-"""Main application - all logic here"""
+"""Main application - entry point and app logic"""
 import sys
 import time
 import logging
-from PyQt5.QtCore import QThread, pyqtSignal, QTimer
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage, QPixmap
 import numpy as np
+from pathlib import Path
+from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QApplication
 
 from camera import Camera
 from gui import MainWindow
-from video_writer import VideoWriter
-from config import Config
+from thread import CameraThread
+from worker import VideoWriter, FrameDumper
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
 log = logging.getLogger("pylonguy")
 
-class CameraThread(QThread):
-    """Thread for continuous frame grabbing - optimized for high speed"""
-    frame_signal = pyqtSignal(np.ndarray)
-    stopped_signal = pyqtSignal()
-    stats_signal = pyqtSignal(int, float)  # frames, fps
+class PylonApp:
+    """Main application controller"""
 
-    def __init__(self, camera):
-        super().__init__()
-        self.camera = camera
-        self.running = False
-        self.recording = False
-        self.writer = None
-        self.frame_count = 0
-        self.record_start_time = 0
-        self.max_frames = None
-        self.max_time = None
-        self.display_interval = 30  # Show every Nth frame when recording
-        self.last_stats_time = 0
-        self.stats_update_interval = 0.1  # Update stats every 100ms
-
-    def run(self):
-        self.running = True
-        frame_counter = 0
-
-        while self.running:
-            frame = self.camera.grab_frame()
-            if frame is not None:
-                frame_counter += 1
-
-                if self.recording and self.writer:
-                    # ALWAYS write frame when recording (no skipping for recording)
-                    if self.writer.write(frame):
-                        self.frame_count += 1
-
-                        # Emit stats periodically (not every frame)
-                        current_time = time.time()
-                        if current_time - self.last_stats_time > self.stats_update_interval:
-                            elapsed = current_time - self.record_start_time
-                            fps = self.frame_count / max(0.001, elapsed)
-                            self.stats_signal.emit(self.frame_count, fps)
-                            self.last_stats_time = current_time
-
-                        # Check limits
-                        if self.max_frames and self.frame_count >= self.max_frames:
-                            log.info(f"Reached frame limit: {self.max_frames}")
-                            self.stopped_signal.emit()
-                            self.recording = False
-                            break
-
-                        if self.max_time:
-                            elapsed = current_time - self.record_start_time
-                            if elapsed >= self.max_time:
-                                log.info(f"Reached time limit: {self.max_time}s")
-                                self.stopped_signal.emit()
-                                self.recording = False
-                                break
-
-                    # Only emit frame for display occasionally when recording at high speed
-                    if frame_counter % self.display_interval == 0:
-                        self.frame_signal.emit(frame)
-                else:
-                    # When not recording, show every frame for smooth preview
-                    self.frame_signal.emit(frame)
-            else:
-                self.msleep(10)  # Shorter sleep for higher responsiveness
-
-    def stop(self):
-        self.running = False
-        if self.writer:
-            self.writer.stop()
-            self.writer = None
-        self.wait()
-
-    def start_recording(self, writer, max_frames=None, max_time=None):
-        import time
-        self.writer = writer
-        self.frame_count = 0
-        self.max_frames = max_frames
-        self.max_time = max_time
-        self.record_start_time = time.time()
-        self.last_stats_time = time.time()
-
-        # Adjust display interval based on expected frame rate
-        # For high-speed recording, show fewer frames
-        w, h, _, _ = self.camera.get_roi()
-        if w <= 256 and h <= 256:  # Small ROI = likely high speed
-            self.display_interval = 100  # Show every 100th frame
-        elif w <= 640 and h <= 480:
-            self.display_interval = 50
-        else:
-            self.display_interval = 30
-
-        if self.writer.start():
-            self.recording = True
-            return True
-        return False
-
-    def stop_recording(self):
-        self.recording = False
-        frames = self.frame_count
-        if self.writer:
-            self.writer.stop()
-            self.writer = None
-        self.display_interval = 1  # Reset to show every frame
-        return frames
-
-class App:
     def __init__(self):
         self.camera = Camera()
-        self.config = Config()
         self.thread = None
-        self.last_frame = None
-
-        # Create GUI
         self.window = MainWindow()
+        self.last_frame = None
+        self.frame_display_count = 0  # Debug counter
+        self.current_selection = None  # Store current selection
 
         # Connect signals
-        self.window.preview.btn_live.clicked.connect(self.toggle_live)
-        self.window.preview.btn_capture.clicked.connect(self.capture)
-        self.window.preview.btn_record.clicked.connect(self.toggle_record)
+        self._connect_signals()
 
+        # Setup GUI logging
+        self._setup_logging()
+
+        # Status update timer
+        self.status_timer = QTimer()
+        self.status_timer.timeout.connect(self._update_status)
+        self.status_timer.start(100)  # 10 Hz update
+
+        log.info("Application started")
+
+    def _connect_signals(self):
+        """Connect GUI signals to handlers"""
+        # Connection
         self.window.settings.btn_connect.clicked.connect(self.connect_camera)
         self.window.settings.btn_disconnect.clicked.connect(self.disconnect_camera)
-        self.window.settings.btn_apply.clicked.connect(self.apply_settings)
 
-        # Status timer
-        self.status_timer = QTimer()
-        self.status_timer.timeout.connect(self.update_status)
-        self.status_timer.start(100)  # Update 10 times per second
+        # Settings
+        self.window.settings.settings_changed.connect(self.apply_settings)
 
-        # Cleanup on close
-        self.window.closeEvent = self.cleanup_on_close
+        # Preview controls
+        self.window.preview.btn_live.clicked.connect(self.toggle_live)
+        self.window.preview.btn_capture.clicked.connect(self.capture_frame)
+        self.window.preview.btn_record.clicked.connect(self.toggle_recording)
 
-        # Logging to GUI
+        # Selection
+        self.window.preview.selection_changed.connect(self._on_selection_changed)
+
+    def _setup_logging(self):
+        """Route logging to GUI"""
         class GuiLogHandler(logging.Handler):
             def __init__(self, widget):
                 super().__init__()
                 self.widget = widget
+
             def emit(self, record):
-                self.widget.add(self.format(record))
+                msg = self.format(record)
+                self.widget.add(msg)
 
         handler = GuiLogHandler(self.window.log)
         handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', '%H:%M:%S'))
         log.addHandler(handler)
 
-        log.info("Application started")
-
     def connect_camera(self):
         """Connect to camera"""
         if self.camera.open():
-            # Get current ROI
+            # Update GUI with current settings
             w, h, ox, oy = self.camera.get_roi()
-            self.window.settings.width.setValue(w)
-            self.window.settings.height.setValue(h)
-            self.window.settings.offset_x.setValue(ox)
-            self.window.settings.offset_y.setValue(oy)
+            self.window.settings.roi_width.setValue(w)
+            self.window.settings.roi_height.setValue(h)
+            self.window.settings.roi_offset_x.setValue(ox)
+            self.window.settings.roi_offset_y.setValue(oy)
 
-            log.info(f"Connected - ROI: {w}x{h} @ ({ox},{oy})")
+            self.window.settings.btn_connect.setEnabled(False)
+            self.window.settings.btn_disconnect.setEnabled(True)
+
+            log.info(f"Camera connected: {w}x{h}")
         else:
             log.error("Failed to connect camera")
 
@@ -181,46 +97,31 @@ class App:
         """Disconnect camera"""
         self.stop_live()
         self.camera.close()
-        log.info("Disconnected")
+
+        self.window.settings.btn_connect.setEnabled(True)
+        self.window.settings.btn_disconnect.setEnabled(False)
+
+        log.info("Camera disconnected")
 
     def apply_settings(self):
         """Apply settings to camera"""
-        # Update config
-        self.config.width = self.window.settings.width.value()
-        self.config.height = self.window.settings.height.value()
-        self.config.offset_x = self.window.settings.offset_x.value()
-        self.config.offset_y = self.window.settings.offset_y.value()
-        self.config.exposure = self.window.settings.exposure.value()
-        self.config.gain = self.window.settings.gain.value()
-        self.config.sensor_mode = self.window.settings.sensor_mode.currentText()
-        self.config.framerate_enable = self.window.settings.framerate_enable.isChecked()
-        self.config.framerate = self.window.settings.framerate.value()
-        self.config.video_fps = self.window.settings.video_fps.value()
+        if not self.camera.device:
+            log.warning("Camera not connected")
+            return
 
-        # Recording limits
-        if self.window.settings.limit_frames_enable.isChecked():
-            self.config.limit_frames = self.window.settings.limit_frames.value()
-        else:
-            self.config.limit_frames = None
+        settings = self.window.settings.get_settings()
 
-        if self.window.settings.limit_time_enable.isChecked():
-            self.config.limit_time = self.window.settings.limit_time.value()
-        else:
-            self.config.limit_time = None
+        # Apply ROI
+        roi = settings['roi']
+        self.camera.set_roi(roi['width'], roi['height'], roi['offset_x'], roi['offset_y'])
 
-        # Apply to camera
-        self.camera.set_roi(
-            self.config.width,
-            self.config.height,
-            self.config.offset_x,
-            self.config.offset_y
-        )
-        self.camera.set_exposure(self.config.exposure)
-        self.camera.set_gain(self.config.gain)
-        self.camera.set_sensor_mode(self.config.sensor_mode)
-        self.camera.set_framerate(self.config.framerate_enable, self.config.framerate)
+        # Apply acquisition settings
+        acq = settings['acquisition']
+        self.camera.set_exposure(acq['exposure'])
+        self.camera.set_gain(acq['gain'])
+        self.camera.set_framerate(acq['framerate_enable'], acq['framerate'])
 
-        log.info(f"Applied - ROI: {self.config.width}x{self.config.height}")
+        log.info("Settings applied")
 
     def toggle_live(self):
         """Toggle live preview"""
@@ -229,21 +130,6 @@ class App:
         else:
             self.start_live()
 
-    def update_recording_stats(self, frames, fps):
-        """Update recording statistics without updating display"""
-        # This replaces the constant status updates during recording
-        status_parts = []
-
-        # Camera ROI
-        if self.camera.device:
-            w, h, _, _ = self.camera.get_roi()
-            status_parts.append(f"ROI: {w}x{h}")
-
-        # Recording stats
-        status_parts.append(f"REC: {frames} frames @ {fps:.1f} fps")
-
-        self.window.preview.status.setText(" | ".join(status_parts))
-
     def start_live(self):
         """Start live preview"""
         if not self.camera.device:
@@ -251,150 +137,219 @@ class App:
             return
 
         self.thread = CameraThread(self.camera)
-        self.thread.frame_signal.connect(self.display_frame)
-        self.thread.stopped_signal.connect(self.on_recording_stopped)
-        self.thread.stats_signal.connect(self.update_recording_stats)  # Add this line
+
+        # Connect thread signals
+        self.thread.frame_ready.connect(self._display_frame)
+        self.thread.stats_update.connect(self._update_stats)
+        self.thread.recording_stopped.connect(self._on_recording_stopped)
+
+        # Start with preview enabled
+        self.thread.set_preview_options(True, 1)  # Show every frame initially
+
         self.thread.start()
 
         self.window.preview.btn_live.setText("Stop Live")
-        log.info("Live started")
+        self.window.preview.update_status(live=True)
+        log.info("Live preview started")
 
     def stop_live(self):
         """Stop live preview"""
         if self.thread:
-            # Stop recording first if active
-            if self.thread.recording:
-                self.stop_recording()
-
             self.thread.stop()
             self.thread = None
 
         self.window.preview.btn_live.setText("Start Live")
-        log.info("Live stopped")
+        self.window.preview.update_status(live=False, fps=0, frames=0)
+        self.window.preview.show_message("No Camera")
+        log.info("Live preview stopped")
 
-    def display_frame(self, frame):
-        """Display frame in preview"""
-        self.last_frame = frame
-        self.window.preview.show_frame(frame)
-
-    def capture(self):
-        """Capture current frame"""
+    def capture_frame(self):
+        """Capture single frame (full or selection)"""
         frame = self.last_frame
         if frame is None and self.camera.device:
             frame = self.camera.grab_frame()
 
         if frame is not None:
-            # Save as PNG
+            # Check if we should crop to selection
+            selection = self.window.preview.get_selection()
+            capture_type = "full"
+
+            if selection and selection.isValid():
+                # Crop frame to selection
+                x = max(0, selection.x())
+                y = max(0, selection.y())
+                w = min(selection.width(), frame.shape[1] - x)
+                h = min(selection.height(), frame.shape[0] - y)
+
+                if w > 0 and h > 0:
+                    frame = frame[y:y+h, x:x+w]
+                    capture_type = "selection"
+                    log.info(f"Cropping to selection: {w}x{h}+{x}+{y}")
+
+            # Generate filename
+            settings = self.window.settings.get_settings()
+            base_path = settings['output']['path']
+
+            if settings['output']['append_timestamp']:
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                if capture_type == "selection":
+                    path = f"{base_path}_selection_{timestamp}.png"
+                else:
+                    path = f"{base_path}_{timestamp}.png"
+            else:
+                if capture_type == "selection":
+                    path = f"{base_path}_selection.png"
+                else:
+                    path = f"{base_path}.png"
+
+            # Ensure directory exists
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+            # Save using Qt
+            from PyQt5.QtGui import QImage
             h, w = frame.shape[:2]
 
-            # Convert to 8-bit if needed
             if frame.dtype == np.uint16:
                 frame = (frame >> 8).astype(np.uint8)
 
-            # Create QImage and save
+            # Ensure frame is contiguous
+            if not frame.flags['C_CONTIGUOUS']:
+                frame = np.ascontiguousarray(frame)
+
             if len(frame.shape) == 2:
                 img = QImage(frame.data, w, h, w, QImage.Format_Grayscale8)
             else:
                 img = QImage(frame.data, w, h, w * 3, QImage.Format_RGB888)
 
-            path = self.config.get_image_path()
             if img.save(path):
-                log.info(f"Captured: {path}")
+                log.info(f"Frame captured ({capture_type}): {path}")
             else:
-                log.error("Failed to save image")
+                log.error("Failed to save frame")
         else:
             log.error("No frame available")
 
-    def toggle_record(self):
-        """Toggle recording"""
+    def _on_selection_changed(self, rect):
+        """Handle selection changes"""
+        if rect and rect.isValid():
+            self.current_selection = rect
+            log.debug(f"Selection changed: {rect.width()}x{rect.height()}+{rect.x()}+{rect.y()}")
+        else:
+            self.current_selection = None
+            log.debug("Selection cleared")
+
+    def toggle_recording(self):
+        """Toggle video recording"""
         if self.thread and self.thread.recording:
             self.stop_recording()
         else:
             self.start_recording()
 
     def start_recording(self):
-        """Start recording"""
+        """Start video recording"""
         if not self.thread:
-            self.start_live()
+            log.error("Live preview not started. Please start live preview first.")
+            return
 
-        if self.thread:
-            # Get current ROI
-            w, h, _, _ = self.camera.get_roi()
+        settings = self.window.settings.get_settings()
 
-            # Create writer
-            path = self.config.get_video_path()
-            writer = VideoWriter(path, w, h, self.config.video_fps)
+        # Get ROI for video dimensions
+        w, h, _, _ = self.camera.get_roi()
 
-            # Start with limits if set
-            if self.thread.start_recording(writer, self.config.limit_frames, self.config.limit_time):
-                self.window.preview.btn_record.setText("Stop Recording")
-                log.info(f"Recording: {path} ({w}x{h} @ {self.config.video_fps}fps)")
-                if self.config.limit_frames:
-                    log.info(f"Frame limit: {self.config.limit_frames}")
-                if self.config.limit_time:
-                    log.info(f"Time limit: {self.config.limit_time}s")
-            else:
-                log.error("Failed to start recording")
+        # Generate output path
+        base_path = settings['output']['path']
+        if settings['output']['append_timestamp']:
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            base_path = f"{base_path}_{timestamp}"
+
+        # Create writer based on mode
+        if settings['recording']['mode'] == "Frame Dump":
+            keep_frames = settings['recording'].get('keep_frames', False)
+            writer = FrameDumper(
+                f"{base_path}_frames",
+                w, h,
+                settings['output']['video_fps'],
+                keep_frames=keep_frames
+            )
+            log.info(f"Using frame dump mode (keep frames: {keep_frames})")
+        else:
+            writer = VideoWriter(f"{base_path}.mp4", w, h, settings['output']['video_fps'])
+            log.info("Using real-time video mode")
+
+        # Update preview settings for recording
+        if settings['preview']['off_during_recording']:
+            self.thread.set_preview_options(False, 1)
+            self.window.preview.show_message("Recording...\n(Preview disabled)")
+        else:
+            self.thread.set_preview_options(True, settings['preview']['nth_frame'])
+
+        # Start recording
+        if self.thread.start_recording(
+            writer,
+            settings['recording']['limit_frames'],
+            settings['recording']['limit_time']
+        ):
+            self.window.preview.btn_record.setText("Stop Recording")
+            log.info(f"Recording started: {base_path}")
+        else:
+            log.error("Failed to start recording")
 
     def stop_recording(self):
-        """Stop recording"""
+        """Stop video recording"""
         if self.thread:
             frames = self.thread.stop_recording()
             self.window.preview.btn_record.setText("Record")
-            log.info(f"Recorded {frames} frames")
 
-    def on_recording_stopped(self):
-        """Handler for when recording stops automatically due to limits"""
-        # Update button text
-        self.window.preview.btn_record.setText("Record")
+            # Always restore full preview after recording
+            self.thread.set_preview_options(True, 1)
 
-        # Log that recording stopped
-        if self.thread and hasattr(self.thread, 'frame_count'):
-            frames = self.thread.frame_count
-            log.info(f"Recording auto-stopped: {frames} frames recorded")
-        else:
-            log.info("Recording auto-stopped")
+            log.info(f"Recording stopped: {frames} frames")
 
-    def update_status(self):
-        """Update status bar"""
-        # Skip during high-speed recording (stats are updated separately)
-        if self.thread and self.thread.recording:
-            return  # Stats are updated by stats_signal
+    def _display_frame(self, frame):
+        """Display frame in preview"""
+        if frame is None:
+            log.warning("Received None frame for display")
+            return
 
-        status_parts = []
+        self.last_frame = frame
+        self.frame_display_count += 1
+        self.window.preview.show_frame(frame)
 
-        # Camera ROI
+    def _update_stats(self, stats):
+        """Update recording statistics"""
+        self.window.preview.update_status(
+            fps=stats['fps'],
+            frames=stats['frames']
+        )
+
+    def _update_status(self):
+        """Update status display"""
         if self.camera.device:
             w, h, _, _ = self.camera.get_roi()
-            status_parts.append(f"ROI: {w}x{h}")
-        else:
-            status_parts.append("Not connected")
+            self.window.preview.update_status(roi=f"{w}x{h}")
 
-        # Live status
-        if self.thread and not self.thread.recording:
-            status_parts.append("Live")
-
-        # Selection info
-        if self.window.preview.selection:
-            r = self.window.preview.selection
-            status_parts.append(f"Selection: {r.width()}x{r.height()}")
-
-        self.window.preview.status.setText(" | ".join(status_parts))
-
-    def cleanup_on_close(self, event):
-        """Clean up when closing"""
-        self.stop_live()
-        self.disconnect_camera()
-        event.accept()
+    def _on_recording_stopped(self):
+        """Handle auto-stop of recording"""
+        self.stop_recording()
+        log.info("Recording auto-stopped (limit reached)")
 
     def run(self):
-        """Run application"""
+        """Show window and start application"""
         self.window.show()
 
+        # Set initial button states
+        self.window.settings.btn_disconnect.setEnabled(False)
+
 def main():
+    """Main entry point"""
     app = QApplication(sys.argv)
-    pylon_app = App()
+    app.setStyle('Fusion')  # Modern look
+
+    pylon_app = PylonApp()
     pylon_app.run()
+
+    # Cleanup on exit
+    app.aboutToQuit.connect(lambda: pylon_app.disconnect_camera())
+
     sys.exit(app.exec_())
 
 if __name__ == "__main__":
