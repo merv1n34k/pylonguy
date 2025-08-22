@@ -1,10 +1,10 @@
 """Worker module - handles video writing and frame dumping"""
 import subprocess
 import numpy as np
+import shutil
 from pathlib import Path
 from queue import Queue, Full
 from threading import Thread
-import shutil
 import logging
 import time
 

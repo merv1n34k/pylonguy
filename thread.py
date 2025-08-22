@@ -25,14 +25,15 @@ class CameraThread(QThread):
         self.frame_count = 0
         self.start_time = 0
         self.last_stats_time = 0
+        self.frame_times = []  # Store frame timestamps for raw stats
 
         # Limits
         self.max_frames = None
         self.max_time = None
 
         # Preview settings
-        self.preview_enabled = True  # Default to enabled
-        self.preview_nth = 1  # Show every frame by default
+        self.preview_enabled = True
+        self.preview_nth = 1
         self.frame_counter = 0
 
     def run(self):
@@ -50,6 +51,9 @@ class CameraThread(QThread):
                 if self.recording and self.writer:
                     if self.writer.write(frame):
                         self.frame_count += 1
+                        # Store frame timestamp relative to start
+                        if self.start_time:
+                            self.frame_times.append(time.time() - self.start_time)
 
                         # Check limits
                         if self._check_limits():
@@ -74,7 +78,7 @@ class CameraThread(QThread):
                 self._update_stats()
 
             else:
-                self.msleep(1)  # Short sleep if no frame
+                self.msleep(10)  # Short sleep if no frame
 
     def start_recording(self, writer, max_frames=None, max_time=None):
         """Start recording with given writer"""
@@ -83,6 +87,7 @@ class CameraThread(QThread):
         self.max_time = max_time
         self.frame_count = 0
         self.start_time = time.time()
+        self.frame_times = []  # Clear frame times for new recording
 
         if self.writer.start():
             self.recording = True
@@ -98,7 +103,7 @@ class CameraThread(QThread):
         if self.writer:
             if hasattr(self.writer, 'stop'):
                 result = self.writer.stop()
-                if isinstance(result, str) and result:  # FrameDumper returns path
+                if isinstance(result, str) and result:
                     log.info(f"Video saved: {result}")
             self.writer = None
 
@@ -117,6 +122,11 @@ class CameraThread(QThread):
         self.preview_enabled = enabled
         self.preview_nth = max(1, nth)
         log.info(f"Preview: {'on' if enabled else 'off'}, every {self.preview_nth} frame(s)")
+
+    def update_frame_rate_limit(self):
+        """Update frame rate limit based on current ROI"""
+        # Empty function - kept for compatibility
+        pass
 
     def _check_limits(self) -> bool:
         """Check if recording limits reached"""

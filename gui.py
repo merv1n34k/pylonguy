@@ -22,7 +22,8 @@ class PreviewWidget(QWidget):
             'live': False,
             'roi': '---',
             'selection': '---',
-            'area': '---'
+            'camera_area': '---',
+            'selection_area': ''
         }
 
         # Selection tool variables
@@ -50,8 +51,8 @@ class PreviewWidget(QWidget):
 
         # Status bar with fixed labels (two lines)
         self.status = QLabel(self._get_status_text())
-        self.status.setStyleSheet("background: #333; color: white; padding: 8px 5px; font-family: monospace; font-size: 10pt; line-height: 1.3;")
-        self.status.setMinimumHeight(50)  # Make taller for two lines with padding
+        self.status.setStyleSheet("background: #333; color: white; padding: 8px 5px; font-size: 10pt; line-height: 1.3;")
+        self.status.setMinimumHeight(60)  # Make taller for two lines with padding
         layout.addWidget(self.status)
 
         # Control buttons
@@ -118,9 +119,8 @@ class PreviewWidget(QWidget):
         # Calculate image position for selection mapping
         self.image_rect = self._calculate_image_rect()
 
-        # Update camera area if no selection
-        if not self.selection_rect:
-            self._update_camera_area()
+        # Update areas
+        self._update_areas()
 
         # Update display with selection overlay if needed
         self._update_display()
@@ -133,14 +133,21 @@ class PreviewWidget(QWidget):
     def _get_status_text(self):
         """Generate status text with fixed labels"""
         d = self.status_data
-        return (
+        # First line: FPS, Frames, Live, ROI, Selection position
+        line1 = (
             f"FPS: {d.get('fps', 0):6.1f} | "
             f"Frames: {d.get('frames', 0):8d} | "
             f"Live: {str(d.get('live', False)):5s} | "
             f"ROI: {d.get('roi', '---'):12s} | "
-            f"Selection: {d.get('selection', '---'):25s} | "
-            f"{d.get('area', 'Camera View: ---')}"
+            f"Selection: {d.get('selection', '---'):25s}"
         )
+
+        # Second line: Camera area and selection area (if exists)
+        line2 = f"Camera: {d.get('camera_area', '---')}"
+        if d.get('selection_area'):
+            line2 += f" | Selection: {d.get('selection_area')}"
+
+        return f"{line1}\n{line2}"
 
     def _calculate_image_rect(self) -> QRect:
         """Calculate where the scaled image is positioned in the display widget"""
@@ -324,88 +331,78 @@ class PreviewWidget(QWidget):
             # Map to frame coordinates
             frame_rect = self._map_to_frame_coords(display_rect)
             if frame_rect.isValid():
-                # Get pixel size from settings if available
-                px_to_um = 1.0
-                main_window = self.window() if hasattr(self, 'window') else None
-                if not main_window:
-                    parent = self.parent()
-                    while parent:
-                        if isinstance(parent, MainWindow):
-                            main_window = parent
-                            break
-                        parent = parent.parent()
-
-                if main_window and hasattr(main_window, 'settings'):
-                    px_to_um = main_window.settings.px_to_um.value()
-
                 # Calculate dimensions
                 width_px = frame_rect.width()
                 height_px = frame_rect.height()
                 x_px = frame_rect.x()
                 y_px = frame_rect.y()
-                width_um = width_px * px_to_um
-                height_um = height_px * px_to_um
 
-                # Calculate area
-                area_px2 = width_px * height_px
-                area_um2 = width_um * height_um
-
-                # Format selection string (for first line) - include position
+                # Format selection string - include position
                 selection_str = f"{width_px}×{height_px}px @({x_px},{y_px})"
+                self.update_status(selection=selection_str)
 
-                # Format area string (for second line) - more compact
-                if px_to_um != 1.0:
-                    if area_um2 < 1e6:
-                        area_str = f"Selection Area: {area_px2:,} px² ({area_um2:.1f} μm²)"
-                    else:
-                        area_str = f"Selection Area: {area_px2:,} px² ({area_um2/1e6:.3f} mm²)"
-                else:
-                    area_str = f"Selection Area: {area_px2:,} px²"
-
-                self.update_status(selection=selection_str, area=area_str)
+                # Update areas (both camera and selection)
+                self._update_areas()
                 self.btn_roi_from_selection.setEnabled(True)
         else:
-            self.update_status(selection='---')
-            self._update_camera_area()  # Show camera view area instead
+            self.update_status(selection='---', selection_area='')
+            self._update_areas()
             self.btn_roi_from_selection.setEnabled(False)
 
-    def _update_camera_area(self):
-        """Update status with camera view area when no selection"""
+    def _update_areas(self):
+        """Update both camera area and selection area displays"""
+        # Get pixel size from settings
+        px_to_um = 1.0
+        main_window = self.window() if hasattr(self, 'window') else None
+        if not main_window:
+            parent = self.parent()
+            while parent:
+                if isinstance(parent, MainWindow):
+                    main_window = parent
+                    break
+                parent = parent.parent()
+
+        if main_window and hasattr(main_window, 'settings'):
+            px_to_um = main_window.settings.px_to_um.value()
+
+        # Update camera area
         if self.original_frame_size:
             width_px, height_px = self.original_frame_size
-
-            # Get pixel size from settings
-            px_to_um = 1.0
-            main_window = self.window() if hasattr(self, 'window') else None
-            if not main_window:
-                parent = self.parent()
-                while parent:
-                    if isinstance(parent, MainWindow):
-                        main_window = parent
-                        break
-                    parent = parent.parent()
-
-            if main_window and hasattr(main_window, 'settings'):
-                px_to_um = main_window.settings.px_to_um.value()
-
-            # Calculate area
             area_px2 = width_px * height_px
-            width_um = width_px * px_to_um
-            height_um = height_px * px_to_um
-            area_um2 = width_um * height_um
 
-            # Format area string - more compact
             if px_to_um != 1.0:
+                area_um2 = area_px2 * (px_to_um ** 2)
                 if area_um2 < 1e6:
-                    area_str = f"Camera View: {area_px2:,} px² ({area_um2:.1f} μm²)"
+                    camera_area_str = f"{area_px2:,} px² ({area_um2:.1f} μm²)"
                 else:
-                    area_str = f"Camera View: {area_px2:,} px² ({area_um2/1e6:.3f} mm²)"
+                    camera_area_str = f"{area_px2:,} px² ({area_um2/1e6:.3f} mm²)"
             else:
-                area_str = f"Camera View: {area_px2:,} px²"
+                camera_area_str = f"{area_px2:,} px²"
 
-            self.update_status(area=area_str)
+            self.update_status(camera_area=camera_area_str)
         else:
-            self.update_status(area='Camera View: ---')
+            self.update_status(camera_area='---')
+
+        # Update selection area if exists
+        if self.selection_rect and self.selection_rect.isValid():
+            frame_rect = self._map_to_frame_coords(self.selection_rect)
+            if frame_rect.isValid():
+                width_px = frame_rect.width()
+                height_px = frame_rect.height()
+                area_px2 = width_px * height_px
+
+                if px_to_um != 1.0:
+                    area_um2 = area_px2 * (px_to_um ** 2)
+                    if area_um2 < 1e6:
+                        selection_area_str = f"{area_px2:,} px² ({area_um2:.1f} μm²)"
+                    else:
+                        selection_area_str = f"{area_px2:,} px² ({area_um2/1e6:.3f} mm²)"
+                else:
+                    selection_area_str = f"{area_px2:,} px²"
+
+                self.update_status(selection_area=selection_area_str)
+        else:
+            self.update_status(selection_area='')
 
     def clear_selection(self):
         """Clear the current selection"""
@@ -413,8 +410,8 @@ class PreviewWidget(QWidget):
         self.selecting = False
         self.select_start = None
         self.mouse_pos = None
-        self.update_status(selection='---')
-        self._update_camera_area()  # Show camera view area
+        self.update_status(selection='---', selection_area='')
+        self._update_areas()  # Update camera area
         self.btn_roi_from_selection.setEnabled(False)
         self.selection_changed.emit(None)
         self._update_display()
@@ -445,7 +442,7 @@ class PreviewWidget(QWidget):
                 # Trigger settings changed signal to auto-apply
                 settings.settings_changed.emit()
 
-            # Clear selection after applying (this will also update to show camera area)
+            # Clear selection after applying
             self.clear_selection()
 
     def get_selection(self) -> QRect:
@@ -470,7 +467,7 @@ class PreviewWidget(QWidget):
         self.btn_roi_from_selection.setEnabled(False)
         self.selection_changed.emit(None)
         # Update status
-        self.update_status(selection='---', area='Camera View: ---')
+        self.update_status(selection='---', camera_area='---', selection_area='')
 
 
 class SettingsWidget(QWidget):
@@ -507,10 +504,12 @@ class SettingsWidget(QWidget):
         self.roi_width = QSpinBox()
         self.roi_width.setRange(16, 4096)
         self.roi_width.setValue(640)
+        self.roi_width.setSingleStep(16)  # Common increment for Basler cameras
 
         self.roi_height = QSpinBox()
         self.roi_height.setRange(16, 3072)
         self.roi_height.setValue(480)
+        self.roi_height.setSingleStep(16)  # Common increment for Basler cameras
 
         self.roi_offset_x = QSpinBox()
         self.roi_offset_x.setRange(0, 4096)
@@ -524,19 +523,13 @@ class SettingsWidget(QWidget):
         self.px_to_um.setSuffix(" μm/px")
         self.px_to_um.setDecimals(3)
 
-        # Area display
-        self.roi_area_label = QLabel("---")
-
         roi_layout.addRow("Width (px):", self.roi_width)
         roi_layout.addRow("Height (px):", self.roi_height)
         roi_layout.addRow("Offset X:", self.roi_offset_x)
         roi_layout.addRow("Offset Y:", self.roi_offset_y)
         roi_layout.addRow("Pixel Size:", self.px_to_um)
 
-        # Connect ROI changes to area update
-        self.roi_width.valueChanged.connect(self._update_area)
-        self.roi_height.valueChanged.connect(self._update_area)
-        self.px_to_um.valueChanged.connect(self._update_area)
+        # Connect pixel size changes to update preview area
         self.px_to_um.valueChanged.connect(self._update_preview_area)
 
         roi_group.setLayout(roi_layout)
@@ -555,6 +548,10 @@ class SettingsWidget(QWidget):
         self.gain.setRange(0, 48)
         self.gain.setValue(0)
 
+        # Sensor readout mode (THIS WAS MISSING!)
+        self.sensor_mode = QComboBox()
+        self.sensor_mode.addItems(["Normal", "Fast"])  # Default options
+
         self.framerate_enable = QCheckBox("Limit framerate")
         self.framerate = QDoubleSpinBox()
         self.framerate.setRange(1, 1000)
@@ -565,6 +562,7 @@ class SettingsWidget(QWidget):
 
         acq_layout.addRow("Exposure:", self.exposure)
         acq_layout.addRow("Gain:", self.gain)
+        acq_layout.addRow("Sensor Mode:", self.sensor_mode)  # Add to layout
         acq_layout.addRow("", self.framerate_enable)
         acq_layout.addRow("Framerate:", self.framerate)
 
@@ -606,6 +604,12 @@ class SettingsWidget(QWidget):
             lambda mode: self.keep_frames.setEnabled(mode == "Frame Dump")
         )
 
+        # Report options
+        self.export_raw_stats = QCheckBox("Export raw stats CSV")
+        self.export_raw_stats.setChecked(True)
+        self.export_settings = QCheckBox("Export settings CSV")
+        self.export_settings.setChecked(False)
+
         # Limits
         self.limit_frames_enable = QCheckBox("Limit frames")
         self.limit_frames = QSpinBox()
@@ -624,6 +628,8 @@ class SettingsWidget(QWidget):
 
         rec_layout.addRow("Mode:", self.recording_mode)
         rec_layout.addRow("", self.keep_frames)
+        rec_layout.addRow("", self.export_raw_stats)
+        rec_layout.addRow("", self.export_settings)
         rec_layout.addRow("", self.limit_frames_enable)
         rec_layout.addRow("Max frames:", self.limit_frames)
         rec_layout.addRow("", self.limit_time_enable)
@@ -665,20 +671,6 @@ class SettingsWidget(QWidget):
         main_layout.addWidget(scroll)
         self.setLayout(main_layout)
 
-        # Initial area update
-        self._update_area()
-
-    def _update_area(self):
-        """Update area display in μm²"""
-        width_um = self.roi_width.value() * self.px_to_um.value()
-        height_um = self.roi_height.value() * self.px_to_um.value()
-        area_um2 = width_um * height_um
-
-        if area_um2 < 1000:
-            self.roi_area_label.setText(f"{width_um:.1f} × {height_um:.1f} μm ({area_um2:.1f} μm²)")
-        else:
-            self.roi_area_label.setText(f"{width_um:.1f} × {height_um:.1f} μm ({area_um2/1e6:.3f} mm²)")
-
     def _update_preview_area(self):
         """Update preview area display when pixel size changes"""
         # Find preview widget and update its area display
@@ -692,7 +684,7 @@ class SettingsWidget(QWidget):
                 parent = parent.parent()
 
         if main_window and hasattr(main_window, 'preview'):
-            main_window.preview._update_camera_area()
+            main_window.preview._update_areas()
 
     def get_settings(self) -> dict:
         """Get all settings as dictionary"""
@@ -707,6 +699,7 @@ class SettingsWidget(QWidget):
             'acquisition': {
                 'exposure': self.exposure.value(),
                 'gain': self.gain.value(),
+                'sensor_mode': self.sensor_mode.currentText(),
                 'framerate_enable': self.framerate_enable.isChecked(),
                 'framerate': self.framerate.value()
             },
@@ -718,6 +711,8 @@ class SettingsWidget(QWidget):
             'recording': {
                 'mode': self.recording_mode.currentText(),
                 'keep_frames': self.keep_frames.isChecked(),
+                'export_raw_stats': self.export_raw_stats.isChecked(),
+                'export_settings': self.export_settings.isChecked(),
                 'limit_frames': self.limit_frames.value() if self.limit_frames_enable.isChecked() else None,
                 'limit_time': self.limit_time.value() if self.limit_time_enable.isChecked() else None
             },
@@ -731,6 +726,9 @@ class SettingsWidget(QWidget):
 class LogWidget(QWidget):
     """Log display widget"""
 
+    # Signal for thread-safe text updates
+    append_text = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout()
@@ -740,17 +738,27 @@ class LogWidget(QWidget):
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumHeight(150)
-        self.log.setStyleSheet("font-family: monospace; font-size: 9pt;")
         layout.addWidget(self.log)
 
         self.setLayout(layout)
 
+        # Connect signal for thread-safe updates
+        self.append_text.connect(self._append_text_safe)
+
     def add(self, message: str):
-        """Add message to log"""
-        self.log.append(message)
-        # Auto-scroll to bottom
-        scrollbar = self.log.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        """Add message to log (thread-safe)"""
+        self.append_text.emit(message)
+
+    def _append_text_safe(self, message: str):
+        """Actually append text (called in GUI thread)"""
+        try:
+            self.log.append(message)
+            # Auto-scroll to bottom
+            scrollbar = self.log.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+        except:
+            # Handle any Qt errors silently
+            pass
 
 
 class MainWindow(QMainWindow):
@@ -761,7 +769,7 @@ class MainWindow(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("PylonGuy - Optimized Camera Control")
+        self.setWindowTitle("PylonGuy")
         self.setGeometry(100, 100, 1200, 800)
 
         # Create widgets
