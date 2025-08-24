@@ -1,4 +1,4 @@
-"""Camera module - handles all camera I/O operations"""
+"""Camera module - optimized for high-speed acquisition"""
 import numpy as np
 from pypylon import pylon
 from typing import Optional, Tuple
@@ -8,14 +8,16 @@ import time
 log = logging.getLogger("pylonguy")
 
 class Camera:
-    """Basler camera wrapper with proper settings handling"""
+    """Basler camera wrapper optimized for high-speed operation"""
 
     def __init__(self):
         self.device = None
         self._is_grabbing = False
+        self._grab_strategy = None
+        self._max_buffers = 50  # Increase buffer count for high-speed
 
     def open(self) -> bool:
-        """Open first available camera"""
+        """Open first available camera with optimized settings"""
         try:
             tlf = pylon.TlFactory.GetInstance()
             devices = tlf.EnumerateDevices()
@@ -33,11 +35,72 @@ class Camera:
             model = device_info.GetModelName()
             serial = device_info.GetSerialNumber()
 
+            # Configure for high-speed operation
+            self._configure_high_speed()
+
             log.info(f"Camera opened: {model} (S/N: {serial})")
             return True
         except Exception as e:
             log.error(f"Failed to open camera: {e}")
             return False
+
+    def _configure_high_speed(self):
+        """Configure camera for maximum speed"""
+        try:
+            # Maximize packet size for GigE cameras
+            if hasattr(self.device, 'GevSCPSPacketSize'):
+                try:
+                    # Try jumbo frames first
+                    self.device.GevSCPSPacketSize.SetValue(9000)
+                    log.info("Jumbo frames enabled (9000 bytes)")
+                except:
+                    try:
+                        # Fall back to standard max
+                        self.device.GevSCPSPacketSize.SetValue(1500)
+                        log.info("Standard packet size set (1500 bytes)")
+                    except:
+                        pass
+
+            # Optimize inter-packet delay for GigE
+            if hasattr(self.device, 'GevSCPD'):
+                try:
+                    # Minimize inter-packet delay
+                    self.device.GevSCPD.SetValue(0)
+                    log.info("Inter-packet delay minimized")
+                except:
+                    pass
+
+            # Set maximum number of buffers
+            if hasattr(self.device, 'MaxNumBuffer'):
+                try:
+                    self.device.MaxNumBuffer.SetValue(self._max_buffers)
+                    log.info(f"Buffer count set to {self._max_buffers}")
+                except:
+                    pass
+
+            # Disable unnecessary features for speed
+            # Disable automatic functions that can cause delays
+            try:
+                if hasattr(self.device, 'ExposureAuto'):
+                    self.device.ExposureAuto.SetValue('Off')
+                if hasattr(self.device, 'GainAuto'):
+                    self.device.GainAuto.SetValue('Off')
+                if hasattr(self.device, 'BalanceWhiteAuto'):
+                    self.device.BalanceWhiteAuto.SetValue('Off')
+                log.info("Auto features disabled for speed")
+            except:
+                pass
+
+            # Enable frame burst mode if available
+            if hasattr(self.device, 'AcquisitionBurstFrameCount'):
+                try:
+                    self.device.AcquisitionMode.SetValue('Continuous')
+                    log.info("Continuous acquisition mode set")
+                except:
+                    pass
+
+        except Exception as e:
+            log.warning(f"Could not fully optimize for high-speed: {e}")
 
     def close(self):
         """Close camera connection"""
@@ -51,14 +114,24 @@ class Camera:
                 pass
             self.device = None
 
-    def start_grabbing(self):
+    def start_grabbing(self, high_speed=False):
         """Start continuous frame acquisition"""
         if not self.device or self._is_grabbing:
             return
 
         try:
-            # Start grabbing with latest image strategy
-            self.device.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
+            # Choose strategy based on speed requirements
+            if high_speed:
+                # OneByOne - processes every frame, no drops
+                self._grab_strategy = pylon.GrabStrategy_OneByOne
+                log.info("Using OneByOne strategy for high-speed")
+            else:
+                # Latest only for preview
+                self._grab_strategy = pylon.GrabStrategy_LatestImageOnly
+                log.info("Using LatestImageOnly strategy for preview")
+
+            # Start grabbing with selected strategy
+            self.device.StartGrabbing(self._grab_strategy)
             self._is_grabbing = True
         except Exception as e:
             log.error(f"Failed to start grabbing: {e}")
@@ -77,8 +150,8 @@ class Camera:
             log.error(f"Failed to stop grabbing: {e}")
             self._is_grabbing = False
 
-    def grab_frame(self) -> Optional[np.ndarray]:
-        """Grab single frame"""
+    def grab_frame(self, timeout_ms=5) -> Optional[np.ndarray]:
+        """Grab single frame with minimal timeout for high-speed"""
         if not self.device:
             return None
 
@@ -95,10 +168,31 @@ class Camera:
                 if not self.device.IsGrabbing():
                     return None
 
-            # Retrieve frame
-            result = self.device.RetrieveResult(200, pylon.TimeoutHandling_Return)
+            # Retrieve frame with very short timeout for 4kHz operation
+            result = self.device.RetrieveResult(timeout_ms, pylon.TimeoutHandling_Return)
             if result and result.GrabSucceeded():
-                frame = result.Array.copy()
+                # CRITICAL: Avoid copy for high-speed, use GetArray directly
+                # This returns a reference, not a copy
+                frame = result.GetArray()
+                result.Release()
+                return frame
+            elif result:
+                result.Release()
+            return None
+        except:
+            return None
+
+    def grab_frame_zero_copy(self) -> Optional[np.ndarray]:
+        """Ultra-fast zero-copy frame grab for maximum speed"""
+        if not self.device or not self.device.IsGrabbing():
+            return None
+
+        try:
+            # Retrieve with 1ms timeout for 4kHz
+            result = self.device.RetrieveResult(1, pylon.TimeoutHandling_Return)
+            if result and result.GrabSucceeded():
+                # Return reference without copy
+                frame = result.GetArray()
                 result.Release()
                 return frame
             elif result:
@@ -153,7 +247,7 @@ class Camera:
 
             # Restart grabbing if it was active
             if was_grabbing:
-                self.start_grabbing()
+                self.start_grabbing(high_speed=True)  # Assume high-speed for performance
 
             return result
 
@@ -338,3 +432,29 @@ class Camera:
                 return True
 
         return self.configure_camera(apply_framerate)
+
+    def get_transport_layer_stats(self) -> dict:
+        """Get transport layer statistics for debugging"""
+        stats = {}
+        if not self.device:
+            return stats
+
+        try:
+            # Get buffer statistics
+            if hasattr(self.device, 'Statistic_Total_Buffer_Count'):
+                stats['total_buffers'] = self.device.Statistic_Total_Buffer_Count.GetValue()
+            if hasattr(self.device, 'Statistic_Failed_Buffer_Count'):
+                stats['failed_buffers'] = self.device.Statistic_Failed_Buffer_Count.GetValue()
+            if hasattr(self.device, 'Statistic_Buffer_Underrun_Count'):
+                stats['buffer_underruns'] = self.device.Statistic_Buffer_Underrun_Count.GetValue()
+            if hasattr(self.device, 'Statistic_Total_Packet_Count'):
+                stats['total_packets'] = self.device.Statistic_Total_Packet_Count.GetValue()
+            if hasattr(self.device, 'Statistic_Failed_Packet_Count'):
+                stats['failed_packets'] = self.device.Statistic_Failed_Packet_Count.GetValue()
+            if hasattr(self.device, 'Statistic_Resend_Packet_Count'):
+                stats['resend_packets'] = self.device.Statistic_Resend_Packet_Count.GetValue()
+
+            return stats
+        except Exception as e:
+            log.debug(f"Could not get transport stats: {e}")
+            return stats
