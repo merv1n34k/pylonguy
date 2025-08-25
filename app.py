@@ -30,9 +30,9 @@ class PylonApp:
         self.thread = None
         self.window = MainWindow()
         self.last_frame = None
-        self.frame_display_count = 0  # Debug counter
-        self.current_selection = None  # Store current selection
-        self.recording_base_path = None  # Store recording path for report
+        self.frame_display_count = 0
+        self.current_selection = None
+        self.recording_base_path = None
 
         # Connect signals
         self._connect_signals()
@@ -44,6 +44,11 @@ class PylonApp:
         self.status_timer = QTimer()
         self.status_timer.timeout.connect(self._update_status)
         self.status_timer.start(100)  # 10 Hz update
+
+        # FPS update timer (separate for camera's ResultingFrameRate)
+        self.fps_timer = QTimer()
+        self.fps_timer.timeout.connect(self._update_fps)
+        self.fps_timer.start(500)  # 2 Hz update
 
         log.info("Application started")
 
@@ -82,135 +87,13 @@ class PylonApp:
     def connect_camera(self):
         """Connect to camera"""
         if self.camera.open():
-            # Update GUI with current settings and camera limits
+            # Update GUI with camera capabilities
+            self.window.settings.update_from_camera(self.camera)
+
+            # Get current settings from camera
             w, h, ox, oy = self.camera.get_roi()
 
-            # Get camera limits if available
-            if self.camera.device:
-                try:
-                    # Update ROI limits based on camera
-                    try:
-                        width_min = self.camera.device.Width.GetMin()
-                        width_max = self.camera.device.Width.GetMax()
-                        width_inc = self.camera.device.Width.GetInc()
-                        self.window.settings.roi_width.setRange(width_min, width_max)
-                        self.window.settings.roi_width.setSingleStep(width_inc)
-                    except:
-                        log.debug("Could not get width limits")
-
-                    try:
-                        height_min = self.camera.device.Height.GetMin()
-                        height_max = self.camera.device.Height.GetMax()
-                        height_inc = self.camera.device.Height.GetInc()
-                        self.window.settings.roi_height.setRange(height_min, height_max)
-                        self.window.settings.roi_height.setSingleStep(height_inc)
-                    except:
-                        log.debug("Could not get height limits")
-
-                    # Update offset ranges
-                    try:
-                        offset_x_max = self.camera.device.OffsetX.GetMax()
-                        offset_x_inc = self.camera.device.OffsetX.GetInc()
-                        self.window.settings.roi_offset_x.setRange(0, offset_x_max)
-                        self.window.settings.roi_offset_x.setSingleStep(offset_x_inc)
-                    except:
-                        log.debug("Could not get offset X limits")
-
-                    try:
-                        offset_y_max = self.camera.device.OffsetY.GetMax()
-                        offset_y_inc = self.camera.device.OffsetY.GetInc()
-                        self.window.settings.roi_offset_y.setRange(0, offset_y_max)
-                        self.window.settings.roi_offset_y.setSingleStep(offset_y_inc)
-                    except:
-                        log.debug("Could not get offset Y limits")
-
-                    # Update exposure limits and current value
-                    try:
-                        exp_min = self.camera.device.ExposureTime.GetMin()
-                        exp_max = self.camera.device.ExposureTime.GetMax()
-                        self.window.settings.exposure.setRange(exp_min, exp_max)
-                        current_exp = self.camera.device.ExposureTime.GetValue()
-                        self.window.settings.exposure.setValue(current_exp)
-                    except:
-                        # Try older property name
-                        try:
-                            exp_min = self.camera.device.ExposureTimeAbs.GetMin()
-                            exp_max = self.camera.device.ExposureTimeAbs.GetMax()
-                            self.window.settings.exposure.setRange(exp_min, exp_max)
-                            current_exp = self.camera.device.ExposureTimeAbs.GetValue()
-                            self.window.settings.exposure.setValue(current_exp)
-                        except:
-                            pass
-
-                    # Update gain limits and current value
-                    try:
-                        gain_min = self.camera.device.Gain.GetMin()
-                        gain_max = self.camera.device.Gain.GetMax()
-                        self.window.settings.gain.setRange(gain_min, gain_max)
-                        current_gain = self.camera.device.Gain.GetValue()
-                        self.window.settings.gain.setValue(current_gain)
-                    except:
-                        # Try raw gain property
-                        try:
-                            gain_min = self.camera.device.GainRaw.GetMin()
-                            gain_max = self.camera.device.GainRaw.GetMax()
-                            self.window.settings.gain.setRange(gain_min, gain_max)
-                            current_gain = self.camera.device.GainRaw.GetValue()
-                            self.window.settings.gain.setValue(current_gain)
-                        except:
-                            pass
-
-                    # Get current sensor mode if available
-                    try:
-                        # Clear and check if sensor mode is supported
-                        self.window.settings.sensor_mode.clear()
-
-                        # Try to access the feature
-                        current_mode = self.camera.device.SensorReadoutMode.GetValue()
-
-                        # If we get here, it's supported - get available modes
-                        try:
-                            modes = self.camera.device.SensorReadoutMode.GetSymbolics()
-                            for mode in modes:
-                                self.window.settings.sensor_mode.addItem(mode)
-                        except:
-                            # GetSymbolics not available, use current value as hint
-                            if 'Fast' in current_mode or 'fast' in current_mode:
-                                self.window.settings.sensor_mode.addItems(["Normal", "Fast"])
-                            else:
-                                self.window.settings.sensor_mode.addItems(["Normal", "Fast"])
-
-                        # Set current mode
-                        idx = self.window.settings.sensor_mode.findText(current_mode)
-                        if idx >= 0:
-                            self.window.settings.sensor_mode.setCurrentIndex(idx)
-                    except (AttributeError, Exception):
-                        # Feature not supported - keep default options but disable
-                        self.window.settings.sensor_mode.addItems(["Normal", "Fast"])
-                        self.window.settings.sensor_mode.setEnabled(False)
-                        self.window.settings.sensor_mode.setToolTip("Not supported by this camera")
-
-                    # Check framerate settings
-                    try:
-                        is_enabled = self.camera.device.AcquisitionFrameRateEnable.GetValue()
-                        self.window.settings.framerate_enable.setChecked(is_enabled)
-
-                        if is_enabled:
-                            current_fps = self.camera.device.AcquisitionFrameRate.GetValue()
-                            self.window.settings.framerate.setValue(current_fps)
-                    except:
-                        # Camera may not support framerate control
-                        pass
-
-                except Exception as e:
-                    log.warning(f"Could not update GUI limits from camera: {e}")
-
-            # Set current values
-            self.window.settings.roi_width.setValue(w)
-            self.window.settings.roi_height.setValue(h)
-            self.window.settings.roi_offset_x.setValue(ox)
-            self.window.settings.roi_offset_y.setValue(oy)
-
+            # Update buttons
             self.window.settings.btn_connect.setEnabled(False)
             self.window.settings.btn_disconnect.setEnabled(True)
 
@@ -234,23 +117,64 @@ class PylonApp:
             log.warning("Camera not connected")
             return
 
-        settings = self.window.settings.get_settings()
+        # Store preview state and stop if running
+        was_live = False
+        was_recording = False
 
-        # Apply ROI
-        roi = settings['roi']
-        self.camera.set_roi(roi['width'], roi['height'], roi['offset_x'], roi['offset_y'])
+        if self.thread and self.thread.isRunning():
+            was_live = True
+            if self.thread.recording:
+                was_recording = True
+                log.warning("Cannot apply settings while recording. Please stop recording first.")
+                return
 
-        # Apply acquisition settings
-        acq = settings['acquisition']
-        self.camera.set_exposure(acq['exposure'])
-        self.camera.set_gain(acq['gain'])
-        self.camera.set_sensor_mode(acq['sensor_mode'])
-        self.camera.set_framerate(acq['framerate_enable'], acq['framerate'])
+            # Stop preview temporarily
+            log.info("Stopping preview to apply settings...")
+            self.stop_live()
+            # Small delay to ensure thread fully stops
+            time.sleep(0.1)
 
-        # Update area display if pixel size changed
-        self.window.preview._update_areas()
+        try:
+            settings = self.window.settings.get_settings()
 
-        log.info("Settings applied")
+            # Apply ROI and binning
+            roi = settings['roi']
+            self.camera.set_roi(roi['width'], roi['height'], roi['offset_x'], roi['offset_y'])
+            self.camera.set_binning(roi['binning_h'], roi['binning_v'])
+
+            # Apply acquisition settings
+            acq = settings['acquisition']
+            self.camera.set_exposure(acq['exposure'])
+            self.camera.set_gain(acq['gain'])
+            self.camera.set_pixel_format(acq['pixel_format'])
+            self.camera.set_sensor_readout_mode(acq['sensor_mode'])
+
+            # Apply frame rate controls
+            fr = settings['framerate']
+            self.camera.set_acquisition_framerate(fr['enabled'], fr['target_fps'] if fr['enabled'] else None)
+            self.camera.set_device_link_throughput(fr['throughput_enabled'],
+                                               fr['throughput_limit'] if fr['throughput_enabled'] else None)
+
+            # Update area display if pixel size changed
+            self.window.preview._update_areas()
+
+            log.info("Settings applied successfully")
+
+        except Exception as e:
+            log.error(f"Failed to apply settings: {e}")
+
+        finally:
+            # Restart preview if it was running
+            if was_live:
+                log.info("Restarting preview...")
+                time.sleep(0.1)  # Small delay before restarting
+                self.start_live()
+
+    def _update_fps(self):
+        """Update FPS display from camera's ResultingFrameRate"""
+        if self.camera.device and self.thread and self.thread.isRunning():
+            fps = self.camera.get_resulting_framerate()
+            self.window.settings.update_fps_display(fps)
 
     def toggle_live(self):
         """Toggle live preview"""
@@ -273,7 +197,7 @@ class PylonApp:
         self.thread.recording_stopped.connect(self._on_recording_stopped)
 
         # Start with preview enabled
-        self.thread.set_preview_options(True, 1)  # Show every frame initially
+        self.thread.set_preview_options(True, 1)
 
         self.thread.start()
 
@@ -369,56 +293,36 @@ class PylonApp:
             log.warning("No recording base path available for raw stats")
             return
 
-        # Use same base path as recording with _stats suffix
         path = f"{self.recording_base_path}_stats.csv"
-
-        # Ensure directory exists
         Path(path).parent.mkdir(parents=True, exist_ok=True)
 
         try:
             with open(path, 'w', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-
-                # Write header
                 writer.writerow(['time', 'frame_count', 'fps'])
 
                 frame_count = recording_stats['frame_count']
 
-                # Use actual frame timestamps if available
                 if 'frame_times' in recording_stats and recording_stats['frame_times']:
                     times = recording_stats['frame_times']
-                    
+
                     for i, time_val in enumerate(times):
                         frame_num = i + 1
-                        
-                        # Calculate FPS as frame_count / elapsed_time
-                        if time_val > 0:
-                            fps_val = frame_num / time_val
-                        else:
-                            fps_val = 0.0
-                        
+                        fps_val = frame_num / time_val if time_val > 0 else 0.0
                         writer.writerow([f'{time_val:.6f}', frame_num, f'{fps_val:.2f}'])
-                        
+
                 elif frame_count > 0:
-                    # Generate evenly spaced time points based on average FPS
                     elapsed_time = recording_stats['elapsed_time']
                     if elapsed_time > 0:
                         avg_fps = frame_count / elapsed_time
                         time_interval = 1.0 / avg_fps if avg_fps > 0 else 0.1
-                        
+
                         for i in range(frame_count):
                             time_val = i * time_interval
                             frame_num = i + 1
-                            
-                            # Calculate FPS as frame_count / elapsed_time at this point
-                            if time_val > 0:
-                                fps_val = frame_num / time_val
-                            else:
-                                fps_val = 0.0 if i == 0 else avg_fps
-                            
+                            fps_val = frame_num / time_val if time_val > 0 else 0.0
                             writer.writerow([f'{time_val:.6f}', frame_num, f'{fps_val:.2f}'])
                 else:
-                    # Empty recording - write single row with zeros
                     writer.writerow([0.0, 0, 0.0])
 
             log.info(f"Raw stats saved: {path}")
@@ -427,36 +331,30 @@ class PylonApp:
             log.error(f"Failed to create raw stats: {e}")
 
     def create_settings_report(self, recording_stats):
-        """Create CSV report with parameter-value pairs (no section headers)"""
+        """Create CSV report with parameter-value pairs"""
         if not self.recording_base_path:
             log.warning("No recording base path available for settings report")
             return
 
         settings = self.window.settings.get_settings()
-
-        # Use same base path as recording with _settings suffix
         path = f"{self.recording_base_path}_settings.csv"
-
-        # Ensure directory exists
         Path(path).parent.mkdir(parents=True, exist_ok=True)
 
         try:
             with open(path, 'w', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-
-                # Write header
                 writer.writerow(['Parameter', 'Value'])
-                
+
                 # General info
                 writer.writerow(['Report Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
                 writer.writerow(['Recording Path', self.recording_base_path])
-                
+
                 # Recording stats
                 writer.writerow(['Frame Count', recording_stats['frame_count']])
                 writer.writerow(['Duration (s)', f"{recording_stats['elapsed_time']:.2f}"])
                 fps = recording_stats['frame_count'] / recording_stats['elapsed_time'] if recording_stats['elapsed_time'] > 0 else 0
                 writer.writerow(['Average FPS', f'{fps:.2f}'])
-                
+
                 # Camera ROI
                 if self.camera.device:
                     w, h, ox, oy = self.camera.get_roi()
@@ -464,7 +362,7 @@ class PylonApp:
                     writer.writerow(['ROI Height', h])
                     writer.writerow(['ROI Offset X', ox])
                     writer.writerow(['ROI Offset Y', oy])
-                    
+
                     # Camera area
                     area_px2 = w * h
                     px_to_um = settings['roi']['px_to_um']
@@ -472,15 +370,30 @@ class PylonApp:
                     if px_to_um != 1.0:
                         area_um2 = area_px2 * (px_to_um ** 2)
                         writer.writerow(['Camera Area (μm²)', f'{area_um2:.2f}'])
-                
+
                 # Acquisition settings
                 acq = settings['acquisition']
                 writer.writerow(['Exposure (μs)', acq['exposure']])
                 writer.writerow(['Gain', acq['gain']])
+                writer.writerow(['Pixel Format', acq['pixel_format']])
                 writer.writerow(['Sensor Mode', acq['sensor_mode']])
-                writer.writerow(['Framerate Limit', f"{acq['framerate']} Hz" if acq['framerate_enable'] else 'Disabled'])
+                writer.writerow(['Binning H', settings['roi']['binning_h']])
+                writer.writerow(['Binning V', settings['roi']['binning_v']])
+
+                # Frame rate settings
+                fr = settings['framerate']
+                if fr['enabled']:
+                    writer.writerow(['Frame Rate Limit', f"{fr['target_fps']} Hz"])
+                else:
+                    writer.writerow(['Frame Rate Limit', 'Disabled'])
+
+                if fr['throughput_enabled']:
+                    writer.writerow(['Throughput Limit', f"{fr['throughput_limit']} Mbps"])
+                else:
+                    writer.writerow(['Throughput Limit', 'Disabled'])
+
                 writer.writerow(['Pixel Size (μm/px)', settings['roi']['px_to_um']])
-                
+
                 # Recording settings
                 rec = settings['recording']
                 writer.writerow(['Recording Mode', rec['mode']])
@@ -571,7 +484,7 @@ class PylonApp:
                 'frame_count': self.thread.frame_count,
                 'elapsed_time': time.time() - self.thread.start_time if self.thread.start_time else 0,
                 'start_time': self.thread.start_time,
-                'frame_times': getattr(self.thread, 'frame_times', [])  # Get frame times if available
+                'frame_times': getattr(self.thread, 'frame_times', [])
             }
 
             frames = self.thread.stop_recording()
@@ -633,7 +546,7 @@ class PylonApp:
 def main():
     """Main entry point"""
     app = QApplication(sys.argv)
-    app.setStyle('Fusion')  # Modern look
+    app.setStyle('Fusion')
 
     pylon_app = PylonApp()
     pylon_app.run()

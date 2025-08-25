@@ -4,6 +4,8 @@ from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QPen
 from PyQt5.QtWidgets import *
 import numpy as np
 import logging
+import json
+from pathlib import Path
 
 log = logging.getLogger("pylonguy")
 
@@ -471,7 +473,7 @@ class PreviewWidget(QWidget):
 
 
 class SettingsWidget(QWidget):
-    """Settings panel with all controls"""
+    """Settings panel with all controls and presets"""
 
     # Signals
     settings_changed = pyqtSignal()
@@ -479,6 +481,153 @@ class SettingsWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.init_ui()
+        self.init_presets()
+
+    def init_presets(self):
+        """Initialize preset configurations"""
+        # Presets defined in GUI, not camera
+        self.presets = {
+            'quality': {
+                'roi_width': 1920,
+                'roi_height': 1080,
+                'binning_h': 1,
+                'binning_v': 1,
+                'exposure': 1000,
+                'gain': 0,
+                'pixel_format': 'Mono10p',
+                'sensor_readout_mode': 'Normal',
+                'acquisition_framerate_enable': False,
+                'throughput_limit_enable': False
+            },
+            'speed': {
+                'roi_width': 320,
+                'roi_height': 240,
+                'binning_h': 2,
+                'binning_v': 2,
+                'exposure': 100,
+                'gain': 10,
+                'pixel_format': 'Mono8',
+                'sensor_readout_mode': 'Fast',
+                'acquisition_framerate_enable': False,
+                'throughput_limit_enable': False
+            },
+            'balanced': {
+                'roi_width': 640,
+                'roi_height': 480,
+                'binning_h': 1,
+                'binning_v': 1,
+                'exposure': 500,
+                'gain': 5,
+                'pixel_format': 'Mono8',
+                'sensor_readout_mode': 'Normal',
+                'acquisition_framerate_enable': False,
+                'throughput_limit_enable': False
+            }
+        }
+
+        # Load custom presets from JSON file if exists
+        self.load_custom_presets()
+
+    def load_custom_presets(self):
+        """Load custom presets from JSON file"""
+        preset_file = Path("./presets.json")
+        if preset_file.exists():
+            try:
+                with open(preset_file, 'r') as f:
+                    custom_presets = json.load(f)
+                    if 'custom' in custom_presets:
+                        self.presets['custom'] = custom_presets['custom']
+                        log.info("Loaded custom preset")
+            except Exception as e:
+                log.error(f"Failed to load custom presets: {e}")
+
+    def save_presets_to_file(self):
+        """Save custom preset to JSON file"""
+        preset_file = Path("./presets.json")
+        try:
+            with open(preset_file, 'w') as f:
+                json.dump({'custom': self.presets.get('custom', {})}, f, indent=2)
+            log.info("Saved custom preset")
+        except Exception as e:
+            log.error(f"Failed to save custom preset: {e}")
+
+    def apply_preset(self, preset_name=None):
+        """Apply preset values to GUI widgets"""
+        if preset_name is None:
+            preset_name = self.preset_combo.currentText()
+
+        if preset_name not in self.presets:
+            log.warning(f"Preset '{preset_name}' not found")
+            return
+
+        preset = self.presets[preset_name]
+
+        # Apply values to widgets
+        for key, value in preset.items():
+            # Map preset keys to widget names
+            widget_map = {
+                'roi_width': self.roi_width,
+                'roi_height': self.roi_height,
+                'roi_offset_x': self.roi_offset_x,
+                'roi_offset_y': self.roi_offset_y,
+                'binning_h': self.binning_horizontal,
+                'binning_v': self.binning_vertical,
+                'exposure': self.exposure,
+                'gain': self.gain,
+                'pixel_format': self.pixel_format,
+                'sensor_readout_mode': self.sensor_mode,
+                'acquisition_framerate_enable': self.framerate_enable,
+                'acquisition_framerate': self.framerate,
+                'throughput_limit_enable': self.throughput_enable,
+                'throughput_limit': self.throughput_limit
+            }
+
+            widget = widget_map.get(key)
+            if widget:
+                if isinstance(widget, QSpinBox) or isinstance(widget, QDoubleSpinBox):
+                    widget.setValue(value)
+                elif isinstance(widget, QComboBox):
+                    index = widget.findText(str(value))
+                    if index >= 0:
+                        widget.setCurrentIndex(index)
+                elif isinstance(widget, QCheckBox):
+                    widget.setChecked(value)
+
+        log.info(f"Applied preset: {preset_name}")
+        # Emit signal to apply to camera
+        self.settings_changed.emit()
+
+    def save_custom_preset(self):
+        """Save current settings as custom preset"""
+        # Get current values from widgets
+        custom = {
+            'roi_width': self.roi_width.value(),
+            'roi_height': self.roi_height.value(),
+            'roi_offset_x': self.roi_offset_x.value(),
+            'roi_offset_y': self.roi_offset_y.value(),
+            'binning_h': int(self.binning_horizontal.currentText()),
+            'binning_v': int(self.binning_vertical.currentText()),
+            'exposure': self.exposure.value(),
+            'gain': self.gain.value(),
+            'pixel_format': self.pixel_format.currentText(),
+            'sensor_readout_mode': self.sensor_mode.currentText(),
+            'acquisition_framerate_enable': self.framerate_enable.isChecked(),
+            'acquisition_framerate': self.framerate.value(),
+            'throughput_limit_enable': self.throughput_enable.isChecked(),
+            'throughput_limit': self.throughput_limit.value()
+        }
+
+        # Save as custom preset
+        self.presets['custom'] = custom
+
+        # Save to file
+        self.save_presets_to_file()
+
+        # Update combo box if custom not already there
+        if self.preset_combo.findText('Custom') < 0:
+            self.preset_combo.addItem('Custom')
+
+        log.info("Saved current settings as custom preset")
 
     def init_ui(self):
         scroll = QScrollArea()
@@ -497,25 +646,54 @@ class SettingsWidget(QWidget):
         conn_group.setLayout(conn_layout)
         layout.addWidget(conn_group)
 
-        # ROI settings
-        roi_group = QGroupBox("ROI")
+        # Preset controls (at the top for easy access)
+        preset_group = QGroupBox("Presets")
+        preset_layout = QFormLayout()
+
+        self.preset_combo = QComboBox()
+        self.preset_combo.addItems(['quality', 'balanced', 'speed'])
+
+        preset_buttons = QHBoxLayout()
+        self.btn_apply_preset = QPushButton("Apply")
+        self.btn_apply_preset.clicked.connect(lambda: self.apply_preset())
+        self.btn_save_custom = QPushButton("Save as Custom")
+        self.btn_save_custom.clicked.connect(self.save_custom_preset)
+        preset_buttons.addWidget(self.btn_apply_preset)
+        preset_buttons.addWidget(self.btn_save_custom)
+
+        preset_layout.addRow("Select Preset:", self.preset_combo)
+        preset_layout.addRow(preset_buttons)
+        preset_group.setLayout(preset_layout)
+        layout.addWidget(preset_group)
+
+        # ROI settings with binning
+        roi_group = QGroupBox("ROI & Binning")
         roi_layout = QFormLayout()
 
         self.roi_width = QSpinBox()
         self.roi_width.setRange(16, 4096)
         self.roi_width.setValue(640)
-        self.roi_width.setSingleStep(16)  # Common increment for Basler cameras
+        self.roi_width.setSingleStep(16)
 
         self.roi_height = QSpinBox()
         self.roi_height.setRange(16, 3072)
         self.roi_height.setValue(480)
-        self.roi_height.setSingleStep(16)  # Common increment for Basler cameras
+        self.roi_height.setSingleStep(16)
 
         self.roi_offset_x = QSpinBox()
         self.roi_offset_x.setRange(0, 4096)
+        self.roi_offset_x.setValue(0)
 
         self.roi_offset_y = QSpinBox()
         self.roi_offset_y.setRange(0, 3072)
+        self.roi_offset_y.setValue(0)
+
+        # Binning controls
+        self.binning_horizontal = QComboBox()
+        self.binning_horizontal.addItems(['1', '2', '3', '4'])
+
+        self.binning_vertical = QComboBox()
+        self.binning_vertical.addItems(['1', '2', '3', '4'])
 
         self.px_to_um = QDoubleSpinBox()
         self.px_to_um.setRange(0.01, 1000)
@@ -527,6 +705,8 @@ class SettingsWidget(QWidget):
         roi_layout.addRow("Height (px):", self.roi_height)
         roi_layout.addRow("Offset X:", self.roi_offset_x)
         roi_layout.addRow("Offset Y:", self.roi_offset_y)
+        roi_layout.addRow("Binning H:", self.binning_horizontal)
+        roi_layout.addRow("Binning V:", self.binning_vertical)
         roi_layout.addRow("Pixel Size:", self.px_to_um)
 
         # Connect pixel size changes to update preview area
@@ -548,26 +728,56 @@ class SettingsWidget(QWidget):
         self.gain.setRange(0, 48)
         self.gain.setValue(0)
 
-        # Sensor readout mode (THIS WAS MISSING!)
-        self.sensor_mode = QComboBox()
-        self.sensor_mode.addItems(["Normal", "Fast"])  # Default options
+        # Pixel format
+        self.pixel_format = QComboBox()
+        self.pixel_format.addItems(['Mono8', 'Mono10', 'Mono10p'])
 
-        self.framerate_enable = QCheckBox("Limit framerate")
+        # Sensor readout mode
+        self.sensor_mode = QComboBox()
+        self.sensor_mode.addItems(['Normal', 'Fast'])
+
+        acq_layout.addRow("Exposure:", self.exposure)
+        acq_layout.addRow("Gain:", self.gain)
+        acq_layout.addRow("Pixel Format:", self.pixel_format)
+        acq_layout.addRow("Sensor Mode:", self.sensor_mode)
+
+        acq_group.setLayout(acq_layout)
+        layout.addWidget(acq_group)
+
+        # Frame Rate Control
+        framerate_group = QGroupBox("Frame Rate Control")
+        framerate_layout = QFormLayout()
+
+        # Acquisition frame rate control
+        self.framerate_enable = QCheckBox("Limit Frame Rate")
         self.framerate = QDoubleSpinBox()
-        self.framerate.setRange(1, 1000)
+        self.framerate.setRange(1, 10000)
         self.framerate.setValue(30)
         self.framerate.setSuffix(" Hz")
         self.framerate.setEnabled(False)
         self.framerate_enable.toggled.connect(self.framerate.setEnabled)
 
-        acq_layout.addRow("Exposure:", self.exposure)
-        acq_layout.addRow("Gain:", self.gain)
-        acq_layout.addRow("Sensor Mode:", self.sensor_mode)  # Add to layout
-        acq_layout.addRow("", self.framerate_enable)
-        acq_layout.addRow("Framerate:", self.framerate)
+        # Throughput limit control
+        self.throughput_enable = QCheckBox("Limit Throughput")
+        self.throughput_limit = QDoubleSpinBox()
+        self.throughput_limit.setRange(1, 1000)
+        self.throughput_limit.setValue(125)
+        self.throughput_limit.setSuffix(" Mbps")
+        self.throughput_limit.setEnabled(False)
+        self.throughput_enable.toggled.connect(self.throughput_limit.setEnabled)
 
-        acq_group.setLayout(acq_layout)
-        layout.addWidget(acq_group)
+        # Current FPS display
+        self.current_fps_label = QLabel("Current FPS: ---")
+        self.current_fps_label.setStyleSheet("font-weight: bold; color: green;")
+
+        framerate_layout.addRow(self.framerate_enable)
+        framerate_layout.addRow("Target FPS:", self.framerate)
+        framerate_layout.addRow(self.throughput_enable)
+        framerate_layout.addRow("Limit (Mbps):", self.throughput_limit)
+        framerate_layout.addRow(self.current_fps_label)
+
+        framerate_group.setLayout(framerate_layout)
+        layout.addWidget(framerate_group)
 
         # Output settings
         out_group = QGroupBox("Output")
@@ -599,7 +809,7 @@ class SettingsWidget(QWidget):
 
         # Keep frames option (only for Frame Dump mode)
         self.keep_frames = QCheckBox("Keep frame files after conversion")
-        self.keep_frames.setEnabled(False)  # Disabled by default
+        self.keep_frames.setEnabled(False)
         self.recording_mode.currentTextChanged.connect(
             lambda mode: self.keep_frames.setEnabled(mode == "Frame Dump")
         )
@@ -671,6 +881,83 @@ class SettingsWidget(QWidget):
         main_layout.addWidget(scroll)
         self.setLayout(main_layout)
 
+    def update_from_camera(self, camera):
+        """Update widget limits and availability from camera"""
+        if not camera or not camera.device:
+            return
+
+        # Update ROI limits
+        for param_name, widget in [
+            ('Width', self.roi_width),
+            ('Height', self.roi_height),
+            ('OffsetX', self.roi_offset_x),
+            ('OffsetY', self.roi_offset_y)
+        ]:
+            limits = camera.get_parameter_limits(param_name)
+            if limits:
+                if 'min' in limits and 'max' in limits:
+                    widget.setRange(limits['min'], limits['max'])
+                if 'inc' in limits:
+                    widget.setSingleStep(limits['inc'])
+
+        # Update exposure limits
+        limits = camera.get_parameter_limits('ExposureTime')
+        if not limits:
+            limits = camera.get_parameter_limits('ExposureTimeAbs')
+        if limits:
+            if 'min' in limits and 'max' in limits:
+                self.exposure.setRange(limits['min'], limits['max'])
+
+        # Update gain limits
+        limits = camera.get_parameter_limits('Gain')
+        if not limits:
+            limits = camera.get_parameter_limits('GainRaw')
+        if limits:
+            if 'min' in limits and 'max' in limits:
+                self.gain.setRange(limits['min'], limits['max'])
+
+        # Update frame rate limits
+        limits = camera.get_parameter_limits('AcquisitionFrameRate')
+        if limits:
+            if 'min' in limits and 'max' in limits:
+                self.framerate.setRange(limits['min'], limits['max'])
+
+        # Check feature availability
+        if not camera.is_parameter_available('BinningHorizontal'):
+            self.binning_horizontal.setEnabled(False)
+            self.binning_horizontal.setToolTip("Not supported by this camera")
+
+        if not camera.is_parameter_available('BinningVertical'):
+            self.binning_vertical.setEnabled(False)
+            self.binning_vertical.setToolTip("Not supported by this camera")
+
+        if not camera.is_parameter_available('SensorReadoutMode'):
+            self.sensor_mode.setEnabled(False)
+            self.sensor_mode.setToolTip("Not supported by this camera")
+
+        if not camera.is_parameter_available('AcquisitionFrameRateEnable'):
+            self.framerate_enable.setEnabled(False)
+            self.framerate.setEnabled(False)
+            self.framerate_enable.setToolTip("Not supported by this camera")
+
+        if not camera.is_parameter_available('DeviceLinkThroughputLimitMode'):
+            self.throughput_enable.setEnabled(False)
+            self.throughput_limit.setEnabled(False)
+            self.throughput_enable.setToolTip("Not supported by this camera")
+
+        # Get current values from camera
+        w, h, ox, oy = camera.get_roi()
+        self.roi_width.setValue(w)
+        self.roi_height.setValue(h)
+        self.roi_offset_x.setValue(ox)
+        self.roi_offset_y.setValue(oy)
+
+        log.info("Updated GUI from camera capabilities")
+
+    def update_fps_display(self, fps: float):
+        """Update the current FPS display"""
+        self.current_fps_label.setText(f"Current FPS: {fps:.1f}")
+
     def _update_preview_area(self):
         """Update preview area display when pixel size changes"""
         # Find preview widget and update its area display
@@ -694,14 +981,21 @@ class SettingsWidget(QWidget):
                 'height': self.roi_height.value(),
                 'offset_x': self.roi_offset_x.value(),
                 'offset_y': self.roi_offset_y.value(),
+                'binning_h': int(self.binning_horizontal.currentText()),
+                'binning_v': int(self.binning_vertical.currentText()),
                 'px_to_um': self.px_to_um.value()
             },
             'acquisition': {
                 'exposure': self.exposure.value(),
                 'gain': self.gain.value(),
-                'sensor_mode': self.sensor_mode.currentText(),
-                'framerate_enable': self.framerate_enable.isChecked(),
-                'framerate': self.framerate.value()
+                'pixel_format': self.pixel_format.currentText(),
+                'sensor_mode': self.sensor_mode.currentText()
+            },
+            'framerate': {
+                'enabled': self.framerate_enable.isChecked(),
+                'target_fps': self.framerate.value(),
+                'throughput_enabled': self.throughput_enable.isChecked(),
+                'throughput_limit': self.throughput_limit.value()
             },
             'output': {
                 'path': self.output_path.text(),
@@ -721,8 +1015,6 @@ class SettingsWidget(QWidget):
                 'nth_frame': self.preview_nth.value()
             }
         }
-
-
 class LogWidget(QWidget):
     """Log display widget"""
 

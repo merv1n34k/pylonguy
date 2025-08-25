@@ -1,23 +1,21 @@
-"""Camera module - optimized for high-speed acquisition"""
+"""Camera module - simplified parameter interface for Basler cameras"""
 import numpy as np
 from pypylon import pylon
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 import logging
-import time
 
 log = logging.getLogger("pylonguy")
 
 class Camera:
-    """Basler camera wrapper optimized for high-speed operation"""
+    """Basler camera wrapper with clean parameter interface"""
 
     def __init__(self):
         self.device = None
         self._is_grabbing = False
-        self._grab_strategy = None
-        self._max_buffers = 50  # Increase buffer count for high-speed
+        self._max_buffers = 50
 
     def open(self) -> bool:
-        """Open first available camera with optimized settings"""
+        """Open first available camera"""
         try:
             tlf = pylon.TlFactory.GetInstance()
             devices = tlf.EnumerateDevices()
@@ -35,8 +33,8 @@ class Camera:
             model = device_info.GetModelName()
             serial = device_info.GetSerialNumber()
 
-            # Configure for high-speed operation
-            self._configure_high_speed()
+            # Basic optimization settings
+            self._apply_initial_settings()
 
             log.info(f"Camera opened: {model} (S/N: {serial})")
             return True
@@ -44,63 +42,25 @@ class Camera:
             log.error(f"Failed to open camera: {e}")
             return False
 
-    def _configure_high_speed(self):
-        """Configure camera for maximum speed"""
+    def _apply_initial_settings(self):
+        """Apply initial optimization settings"""
         try:
             # Maximize packet size for GigE cameras
-            if hasattr(self.device, 'GevSCPSPacketSize'):
-                try:
-                    # Try jumbo frames first
-                    self.device.GevSCPSPacketSize.SetValue(9000)
-                    log.info("Jumbo frames enabled (9000 bytes)")
-                except:
-                    try:
-                        # Fall back to standard max
-                        self.device.GevSCPSPacketSize.SetValue(1500)
-                        log.info("Standard packet size set (1500 bytes)")
-                    except:
-                        pass
-
-            # Optimize inter-packet delay for GigE
-            if hasattr(self.device, 'GevSCPD'):
-                try:
-                    # Minimize inter-packet delay
-                    self.device.GevSCPD.SetValue(0)
-                    log.info("Inter-packet delay minimized")
-                except:
-                    pass
+            if self.is_parameter_available('GevSCPSPacketSize'):
+                self.set_parameter('GevSCPSPacketSize', 9000)  # Try jumbo frames
 
             # Set maximum number of buffers
-            if hasattr(self.device, 'MaxNumBuffer'):
-                try:
-                    self.device.MaxNumBuffer.SetValue(self._max_buffers)
-                    log.info(f"Buffer count set to {self._max_buffers}")
-                except:
-                    pass
+            if self.is_parameter_available('MaxNumBuffer'):
+                self.set_parameter('MaxNumBuffer', self._max_buffers)
 
-            # Disable unnecessary features for speed
-            # Disable automatic functions that can cause delays
-            try:
-                if hasattr(self.device, 'ExposureAuto'):
-                    self.device.ExposureAuto.SetValue('Off')
-                if hasattr(self.device, 'GainAuto'):
-                    self.device.GainAuto.SetValue('Off')
-                if hasattr(self.device, 'BalanceWhiteAuto'):
-                    self.device.BalanceWhiteAuto.SetValue('Off')
-                log.info("Auto features disabled for speed")
-            except:
-                pass
+            # Disable auto features for consistent performance
+            for auto_feature in ['ExposureAuto', 'GainAuto', 'BalanceWhiteAuto']:
+                if self.is_parameter_available(auto_feature):
+                    self.set_parameter(auto_feature, 'Off')
 
-            # Enable frame burst mode if available
-            if hasattr(self.device, 'AcquisitionBurstFrameCount'):
-                try:
-                    self.device.AcquisitionMode.SetValue('Continuous')
-                    log.info("Continuous acquisition mode set")
-                except:
-                    pass
-
+            log.info("Initial camera settings applied")
         except Exception as e:
-            log.warning(f"Could not fully optimize for high-speed: {e}")
+            log.warning(f"Could not apply all initial settings: {e}")
 
     def close(self):
         """Close camera connection"""
@@ -114,25 +74,301 @@ class Camera:
                 pass
             self.device = None
 
-    def start_grabbing(self, high_speed=False):
+    def configure_camera(self, config_func):
+        """Execute configuration function with proper locking"""
+        if not self.device:
+            return False
+
+        was_grabbing = self._is_grabbing
+
+        try:
+            # Stop grabbing if active
+            if self._is_grabbing:
+                self.stop_grabbing()
+
+            # Execute configuration function
+            result = config_func()
+
+            # Restart grabbing if it was active
+            if was_grabbing:
+                self.start_grabbing()
+
+            return result
+
+        except Exception as e:
+            log.error(f"Configuration failed: {e}")
+            if was_grabbing:
+                try:
+                    self.start_grabbing()
+                except:
+                    pass
+            return False
+
+    # ============= General Parameter Access =============
+
+    def set_parameter(self, param_name: str, value: Any) -> bool:
+        """General setter for any camera parameter"""
+        def apply():
+            try:
+                param = getattr(self.device, param_name)
+                if hasattr(param, 'SetValue'):
+                    # Check if parameter is writable
+                    if hasattr(param, 'IsWritable') and not param.IsWritable():
+                        log.warning(f"Parameter {param_name} is not writable")
+                        return False
+                    param.SetValue(value)
+                    log.debug(f"Set {param_name} = {value}")
+                    return True
+            except Exception as e:
+                log.error(f"Failed to set {param_name}: {e}")
+                return False
+
+        return self.configure_camera(apply)
+
+    def get_parameter(self, param_name: str) -> Any:
+        """General getter for any camera parameter"""
+        try:
+            param = getattr(self.device, param_name)
+            if hasattr(param, 'GetValue'):
+                return param.GetValue()
+        except Exception as e:
+            log.debug(f"Could not get {param_name}: {e}")
+        return None
+
+    def get_parameter_limits(self, param_name: str) -> Dict[str, Any]:
+        """Get min/max/increment for a parameter"""
+        try:
+            param = getattr(self.device, param_name)
+            limits = {}
+            if hasattr(param, 'GetMin'):
+                limits['min'] = param.GetMin()
+            if hasattr(param, 'GetMax'):
+                limits['max'] = param.GetMax()
+            if hasattr(param, 'GetInc'):
+                limits['inc'] = param.GetInc()
+            return limits
+        except:
+            return {}
+
+    def is_parameter_available(self, param_name: str) -> bool:
+        """Check if parameter exists and is readable"""
+        try:
+            param = getattr(self.device, param_name, None)
+            if param is None:
+                return False
+            if hasattr(param, 'IsReadable'):
+                return param.IsReadable()
+            return True
+        except:
+            return False
+
+    # ============= Specific Parameter Setters =============
+
+    def set_roi(self, width: int, height: int, offset_x: int = 0, offset_y: int = 0) -> bool:
+        """Set region of interest"""
+        def apply():
+            try:
+                # Get increments for proper alignment
+                width_inc = self.get_parameter_limits('Width').get('inc', 1)
+                height_inc = self.get_parameter_limits('Height').get('inc', 1)
+                offset_inc = self.get_parameter_limits('OffsetX').get('inc', 1)
+
+                # Align values to increments
+                w = (width // width_inc) * width_inc
+                h = (height // height_inc) * height_inc
+                ox = (offset_x // offset_inc) * offset_inc
+                oy = (offset_y // offset_inc) * offset_inc
+
+                # Apply in correct order: reset offsets first
+                self.device.OffsetX.SetValue(0)
+                self.device.OffsetY.SetValue(0)
+
+                # Set size
+                self.device.Width.SetValue(w)
+                self.device.Height.SetValue(h)
+
+                # Set offsets
+                self.device.OffsetX.SetValue(ox)
+                self.device.OffsetY.SetValue(oy)
+
+                log.info(f"ROI set: {w}x{h}+{ox}+{oy}")
+                return True
+            except Exception as e:
+                log.error(f"Failed to set ROI: {e}")
+                return False
+
+        return self.configure_camera(apply)
+
+    def set_exposure(self, microseconds: float) -> bool:
+        """Set exposure time in microseconds"""
+        def apply():
+            try:
+                # Try modern property name first
+                if self.is_parameter_available('ExposureTime'):
+                    limits = self.get_parameter_limits('ExposureTime')
+                    value = max(limits.get('min', 0), min(microseconds, limits.get('max', 1000000)))
+                    self.device.ExposureTime.SetValue(value)
+                elif self.is_parameter_available('ExposureTimeAbs'):
+                    limits = self.get_parameter_limits('ExposureTimeAbs')
+                    value = max(limits.get('min', 0), min(microseconds, limits.get('max', 1000000)))
+                    self.device.ExposureTimeAbs.SetValue(value)
+                else:
+                    return False
+
+                log.info(f"Exposure set: {value:.1f} μs")
+                return True
+            except Exception as e:
+                log.error(f"Failed to set exposure: {e}")
+                return False
+
+        return self.configure_camera(apply)
+
+    def set_gain(self, gain: float) -> bool:
+        """Set camera gain"""
+        def apply():
+            try:
+                if self.is_parameter_available('Gain'):
+                    limits = self.get_parameter_limits('Gain')
+                    value = max(limits.get('min', 0), min(gain, limits.get('max', 48)))
+                    self.device.Gain.SetValue(value)
+                elif self.is_parameter_available('GainRaw'):
+                    limits = self.get_parameter_limits('GainRaw')
+                    value = int(max(limits.get('min', 0), min(gain, limits.get('max', 255))))
+                    self.device.GainRaw.SetValue(value)
+                else:
+                    return False
+
+                log.info(f"Gain set: {value}")
+                return True
+            except Exception as e:
+                log.error(f"Failed to set gain: {e}")
+                return False
+
+        return self.configure_camera(apply)
+
+    def set_binning(self, horizontal: int = 1, vertical: int = 1) -> bool:
+        """Set binning (1 = no binning)"""
+        def apply():
+            try:
+                success = True
+                if self.is_parameter_available('BinningHorizontal'):
+                    self.device.BinningHorizontal.SetValue(horizontal)
+                else:
+                    success = False
+
+                if self.is_parameter_available('BinningVertical'):
+                    self.device.BinningVertical.SetValue(vertical)
+                else:
+                    success = False
+
+                if success:
+                    log.info(f"Binning set: {horizontal}x{vertical}")
+                return success
+            except Exception as e:
+                log.error(f"Failed to set binning: {e}")
+                return False
+
+        return self.configure_camera(apply)
+
+    def set_pixel_format(self, format: str) -> bool:
+        """Set pixel format (Mono8, Mono10, Mono10p)"""
+        if format not in ['Mono8', 'Mono10', 'Mono10p']:
+            log.error(f"Invalid pixel format: {format}")
+            return False
+
+        return self.set_parameter('PixelFormat', format)
+
+    def set_sensor_readout_mode(self, mode: str) -> bool:
+        """Set sensor readout mode (Normal/Fast)"""
+        if not self.is_parameter_available('SensorReadoutMode'):
+            log.debug("SensorReadoutMode not available")
+            return True  # Not an error if not available
+
+        return self.set_parameter('SensorReadoutMode', mode)
+
+    def set_acquisition_framerate(self, enabled: bool, fps: Optional[float] = None) -> bool:
+        """Enable/disable acquisition frame rate limit"""
+        def apply():
+            try:
+                if self.is_parameter_available('AcquisitionFrameRateEnable'):
+                    self.device.AcquisitionFrameRateEnable.SetValue(enabled)
+
+                    if enabled and fps is not None and self.is_parameter_available('AcquisitionFrameRate'):
+                        limits = self.get_parameter_limits('AcquisitionFrameRate')
+                        value = max(limits.get('min', 1), min(fps, limits.get('max', 1000)))
+                        self.device.AcquisitionFrameRate.SetValue(value)
+                        log.info(f"Frame rate limit: {value:.1f} Hz")
+                    elif not enabled:
+                        log.info("Frame rate limit disabled")
+
+                    return True
+                return False
+            except Exception as e:
+                log.error(f"Failed to set frame rate: {e}")
+                return False
+
+        return self.configure_camera(apply)
+
+    def set_device_link_throughput(self, enabled: bool, limit_mbps: Optional[float] = None) -> bool:
+        """Enable/disable device link throughput limit"""
+        def apply():
+            try:
+                if self.is_parameter_available('DeviceLinkThroughputLimitMode'):
+                    mode = 'On' if enabled else 'Off'
+                    self.device.DeviceLinkThroughputLimitMode.SetValue(mode)
+
+                    if enabled and limit_mbps is not None and self.is_parameter_available('DeviceLinkThroughputLimit'):
+                        # Convert Mbps to bps
+                        limit_bps = int(limit_mbps * 1000000)
+                        self.device.DeviceLinkThroughputLimit.SetValue(limit_bps)
+                        log.info(f"Throughput limit: {limit_mbps:.1f} Mbps")
+                    elif not enabled:
+                        log.info("Throughput limit disabled")
+
+                    return True
+                return False
+            except Exception as e:
+                log.error(f"Failed to set throughput limit: {e}")
+                return False
+
+        return self.configure_camera(apply)
+
+    # ============= Getters =============
+
+    def get_roi(self) -> Tuple[int, int, int, int]:
+        """Get current ROI (width, height, offset_x, offset_y)"""
+        if not self.device:
+            return 640, 480, 0, 0
+
+        try:
+            return (
+                self.get_parameter('Width') or 640,
+                self.get_parameter('Height') or 480,
+                self.get_parameter('OffsetX') or 0,
+                self.get_parameter('OffsetY') or 0
+            )
+        except:
+            return 640, 480, 0, 0
+
+    def get_resulting_framerate(self) -> float:
+        """Get actual resulting frame rate from camera"""
+        if self.is_parameter_available('ResultingFrameRate'):
+            fps = self.get_parameter('ResultingFrameRate')
+            return fps if fps is not None else 0.0
+        return 0.0
+
+    # ============= Acquisition Control =============
+
+    def start_grabbing(self):
         """Start continuous frame acquisition"""
         if not self.device or self._is_grabbing:
             return
 
         try:
-            # Choose strategy based on speed requirements
-            if high_speed:
-                # OneByOne - processes every frame, no drops
-                self._grab_strategy = pylon.GrabStrategy_OneByOne
-                log.info("Using OneByOne strategy for high-speed")
-            else:
-                # Latest only for preview
-                self._grab_strategy = pylon.GrabStrategy_LatestImageOnly
-                log.info("Using LatestImageOnly strategy for preview")
-
-            # Start grabbing with selected strategy
-            self.device.StartGrabbing(self._grab_strategy)
+            # Use OneByOne strategy for consistent frame delivery
+            self.device.StartGrabbing(pylon.GrabStrategy_OneByOne)
             self._is_grabbing = True
+            log.info("Started grabbing")
         except Exception as e:
             log.error(f"Failed to start grabbing: {e}")
             self._is_grabbing = False
@@ -146,12 +382,13 @@ class Camera:
             if self.device.IsGrabbing():
                 self.device.StopGrabbing()
             self._is_grabbing = False
+            log.info("Stopped grabbing")
         except Exception as e:
             log.error(f"Failed to stop grabbing: {e}")
             self._is_grabbing = False
 
-    def grab_frame(self, timeout_ms=5) -> Optional[np.ndarray]:
-        """Grab single frame with minimal timeout for high-speed"""
+    def grab_frame(self, timeout_ms: int = 5) -> Optional[np.ndarray]:
+        """Grab single frame - optimized for speed"""
         if not self.device:
             return None
 
@@ -160,301 +397,20 @@ class Camera:
             if not self._is_grabbing:
                 self.start_grabbing()
 
-            # Check camera is actually grabbing
             if not self.device.IsGrabbing():
-                self._is_grabbing = False
-                self.start_grabbing()
+                return None
 
-                if not self.device.IsGrabbing():
-                    return None
-
-            # Retrieve frame with very short timeout for 4kHz operation
+            # Retrieve frame with minimal timeout
             result = self.device.RetrieveResult(timeout_ms, pylon.TimeoutHandling_Return)
+
             if result and result.GrabSucceeded():
-                # CRITICAL: Avoid copy for high-speed, use GetArray directly
-                # This returns a reference, not a copy
+                # Get array without copy for speed
                 frame = result.GetArray()
                 result.Release()
                 return frame
             elif result:
                 result.Release()
+
             return None
         except:
             return None
-
-    def grab_frame_zero_copy(self) -> Optional[np.ndarray]:
-        """Ultra-fast zero-copy frame grab for maximum speed"""
-        if not self.device or not self.device.IsGrabbing():
-            return None
-
-        try:
-            # Retrieve with 1ms timeout for 4kHz
-            result = self.device.RetrieveResult(1, pylon.TimeoutHandling_Return)
-            if result and result.GrabSucceeded():
-                # Return reference without copy
-                frame = result.GetArray()
-                result.Release()
-                return frame
-            elif result:
-                result.Release()
-            return None
-        except:
-            return None
-
-    def configure_camera(self, config_func):
-        """Execute configuration function with proper locking"""
-        if not self.device:
-            return False
-
-        was_grabbing = self._is_grabbing
-
-        try:
-            # Stop grabbing if active
-            if self._is_grabbing or self.device.IsGrabbing():
-                self.stop_grabbing()
-
-            # Execute the Basler lock sequence
-            # 1. Stop acquisition
-            if hasattr(self.device, 'AcquisitionStop'):
-                try:
-                    self.device.AcquisitionStop.Execute()
-                except:
-                    pass
-
-            # 2. Unlock parameters
-            if hasattr(self.device, 'TLParamsLocked'):
-                try:
-                    self.device.TLParamsLocked.SetValue(False)
-                except:
-                    pass
-
-            # 3. Execute configuration function
-            result = config_func()
-
-            # 4. Lock parameters
-            if hasattr(self.device, 'TLParamsLocked'):
-                try:
-                    self.device.TLParamsLocked.SetValue(True)
-                except:
-                    pass
-
-            # 5. Start acquisition
-            if hasattr(self.device, 'AcquisitionStart'):
-                try:
-                    self.device.AcquisitionStart.Execute()
-                except:
-                    pass
-
-            # Restart grabbing if it was active
-            if was_grabbing:
-                self.start_grabbing(high_speed=True)  # Assume high-speed for performance
-
-            return result
-
-        except Exception as e:
-            log.error(f"Configuration failed: {e}")
-            # Try to restore grabbing state
-            if was_grabbing:
-                try:
-                    self.start_grabbing()
-                except:
-                    pass
-            return False
-
-    def set_roi(self, width: int, height: int, offset_x: int = 0, offset_y: int = 0) -> bool:
-        """Set region of interest"""
-        if not self.device:
-            return False
-
-        def apply_roi():
-            try:
-                # Get increment values
-                width_inc = self.device.Width.GetInc() if hasattr(self.device.Width, 'GetInc') else 1
-                height_inc = self.device.Height.GetInc() if hasattr(self.device.Height, 'GetInc') else 1
-                offset_inc = self.device.OffsetX.GetInc() if hasattr(self.device.OffsetX, 'GetInc') else 1
-
-                # Round to valid increments
-                w = int(width / width_inc) * width_inc
-                h = int(height / height_inc) * height_inc
-                ox = int(offset_x / offset_inc) * offset_inc
-                oy = int(offset_y / offset_inc) * offset_inc
-
-                # Get limits
-                width_max = self.device.Width.GetMax()
-                height_max = self.device.Height.GetMax()
-                width_min = self.device.Width.GetMin()
-                height_min = self.device.Height.GetMin()
-
-                # Clamp to valid range
-                w = max(width_min, min(w, width_max))
-                h = max(height_min, min(h, height_max))
-
-                # Apply ROI settings in correct order
-                self.device.OffsetX.SetValue(0)
-                self.device.OffsetY.SetValue(0)
-                self.device.Width.SetValue(w)
-                self.device.Height.SetValue(h)
-
-                # Set offsets
-                max_offset_x = width_max - w
-                max_offset_y = height_max - h
-                ox = min(ox, max_offset_x)
-                oy = min(oy, max_offset_y)
-                self.device.OffsetX.SetValue(ox)
-                self.device.OffsetY.SetValue(oy)
-
-                log.info(f"ROI set: {w}x{h}+{ox}+{oy}")
-                return True
-            except Exception as e:
-                log.error(f"Failed to set ROI: {e}")
-                return False
-
-        return self.configure_camera(apply_roi)
-
-    def get_roi(self) -> Tuple[int, int, int, int]:
-        """Get current ROI (width, height, offset_x, offset_y)"""
-        if not self.device:
-            return 640, 480, 0, 0
-
-        try:
-            return (
-                self.device.Width.GetValue(),
-                self.device.Height.GetValue(),
-                self.device.OffsetX.GetValue(),
-                self.device.OffsetY.GetValue()
-            )
-        except:
-            return 640, 480, 0, 0
-
-    def set_exposure(self, microseconds: float) -> bool:
-        """Set exposure time in microseconds"""
-        if not self.device:
-            return False
-
-        def apply_exposure():
-            try:
-                # Disable auto exposure
-                if hasattr(self.device, 'ExposureAuto'):
-                    self.device.ExposureAuto.SetValue('Off')
-
-                # Try modern property name first
-                try:
-                    min_exp = self.device.ExposureTime.GetMin()
-                    max_exp = self.device.ExposureTime.GetMax()
-                    microseconds_clamped = max(min_exp, min(microseconds, max_exp))
-                    self.device.ExposureTime.SetValue(microseconds_clamped)
-                    log.info(f"Exposure set: {microseconds_clamped:.1f} μs")
-                    return True
-                except:
-                    # Fall back to older property name
-                    min_exp = self.device.ExposureTimeAbs.GetMin()
-                    max_exp = self.device.ExposureTimeAbs.GetMax()
-                    microseconds_clamped = max(min_exp, min(microseconds, max_exp))
-                    self.device.ExposureTimeAbs.SetValue(microseconds_clamped)
-                    log.info(f"Exposure set: {microseconds_clamped:.1f} μs")
-                    return True
-            except Exception as e:
-                log.error(f"Failed to set exposure: {e}")
-                return False
-
-        return self.configure_camera(apply_exposure)
-
-    def set_gain(self, gain: float) -> bool:
-        """Set camera gain"""
-        if not self.device:
-            return False
-
-        def apply_gain():
-            try:
-                # Disable auto gain
-                if hasattr(self.device, 'GainAuto'):
-                    self.device.GainAuto.SetValue('Off')
-
-                # Try modern property name first
-                try:
-                    min_gain = self.device.Gain.GetMin()
-                    max_gain = self.device.Gain.GetMax()
-                    gain_clamped = max(min_gain, min(gain, max_gain))
-                    self.device.Gain.SetValue(gain_clamped)
-                    log.info(f"Gain set: {gain_clamped}")
-                    return True
-                except:
-                    # Fall back to raw gain
-                    min_gain = self.device.GainRaw.GetMin()
-                    max_gain = self.device.GainRaw.GetMax()
-                    gain_clamped = int(max(min_gain, min(gain, max_gain)))
-                    self.device.GainRaw.SetValue(gain_clamped)
-                    log.info(f"Gain set: {gain_clamped}")
-                    return True
-            except Exception as e:
-                log.error(f"Failed to set gain: {e}")
-                return False
-
-        return self.configure_camera(apply_gain)
-
-    def set_sensor_mode(self, mode: str) -> bool:
-        """Set sensor readout mode if supported"""
-        if not self.device:
-            return False
-
-        def apply_sensor_mode():
-            try:
-                if hasattr(self.device, 'SensorReadoutMode'):
-                    self.device.SensorReadoutMode.SetValue(mode)
-                    log.info(f"Sensor mode set: {mode}")
-                return True
-            except:
-                log.debug("Sensor mode not supported")
-                return True  # Not an error
-
-        return self.configure_camera(apply_sensor_mode)
-
-    def set_framerate(self, enable: bool, fps: float = 30.0) -> bool:
-        """Set acquisition framerate limit"""
-        if not self.device:
-            return False
-
-        def apply_framerate():
-            try:
-                if hasattr(self.device, 'AcquisitionFrameRateEnable'):
-                    self.device.AcquisitionFrameRateEnable.SetValue(enable)
-                    if enable and hasattr(self.device, 'AcquisitionFrameRate'):
-                        min_fps = self.device.AcquisitionFrameRate.GetMin()
-                        max_fps = self.device.AcquisitionFrameRate.GetMax()
-                        fps_clamped = max(min_fps, min(fps, max_fps))
-                        self.device.AcquisitionFrameRate.SetValue(fps_clamped)
-                        log.info(f"Framerate limit: {fps_clamped} Hz")
-                    elif not enable:
-                        log.info("Framerate limit disabled")
-                return True
-            except:
-                log.debug("Framerate control not supported")
-                return True
-
-        return self.configure_camera(apply_framerate)
-
-    def get_transport_layer_stats(self) -> dict:
-        """Get transport layer statistics for debugging"""
-        stats = {}
-        if not self.device:
-            return stats
-
-        try:
-            # Get buffer statistics
-            if hasattr(self.device, 'Statistic_Total_Buffer_Count'):
-                stats['total_buffers'] = self.device.Statistic_Total_Buffer_Count.GetValue()
-            if hasattr(self.device, 'Statistic_Failed_Buffer_Count'):
-                stats['failed_buffers'] = self.device.Statistic_Failed_Buffer_Count.GetValue()
-            if hasattr(self.device, 'Statistic_Buffer_Underrun_Count'):
-                stats['buffer_underruns'] = self.device.Statistic_Buffer_Underrun_Count.GetValue()
-            if hasattr(self.device, 'Statistic_Total_Packet_Count'):
-                stats['total_packets'] = self.device.Statistic_Total_Packet_Count.GetValue()
-            if hasattr(self.device, 'Statistic_Failed_Packet_Count'):
-                stats['failed_packets'] = self.device.Statistic_Failed_Packet_Count.GetValue()
-            if hasattr(self.device, 'Statistic_Resend_Packet_Count'):
-                stats['resend_packets'] = self.device.Statistic_Resend_Packet_Count.GetValue()
-
-            return stats
-        except Exception as e:
-            log.debug(f"Could not get transport stats: {e}")
-            return stats
