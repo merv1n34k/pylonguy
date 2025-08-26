@@ -11,7 +11,7 @@ from PyQt5.QtGui import QImage
 from camera import Camera
 from gui import MainWindow
 from thread import CameraThread
-from worker import VideoWriter, FrameDumper
+from worker import VideoWorker
 
 logging.basicConfig(
     level=logging.DEBUG,  # Set to DEBUG so all messages are available
@@ -372,46 +372,47 @@ class PylonApp:
             self.start_recording()
 
     def start_recording(self):
-        """Start recording"""
-        if not self.thread:
-            log.error("Start live preview first")
-            return
+	    """Start recording"""
+	    if not self.thread:
+	        log.error("Start live preview first")
+	        return
 
-        settings = self.window.settings.get_settings()
+	    settings = self.window.settings.get_settings()
 
-        # Configure preview
-        if settings['output']['preview_off']:
-            self.thread.set_preview_enabled(False)
-            self.window.preview.show_message("Recording...\n(Preview disabled)")
+	    # Configure preview
+	    if settings['output']['preview_off']:
+	        self.thread.set_preview_enabled(False)
+	        self.window.preview.show_message("Recording...\n(Preview disabled)")
 
-        # Generate video path with mandatory timestamp
-        base_path = settings['output']['path']
-        video_prefix = settings['output']['video_prefix']
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
+	    # Create base output directory if needed
+	    base_path = Path(settings['output']['path'])
+	    base_path.mkdir(parents=True, exist_ok=True)
 
-        # Get ROI for dimensions
-        w = self.camera.get_parameter('Width').get('value', 640)
-        h = self.camera.get_parameter('Height').get('value', 480)
+	    # Create unique frames subdirectory path
+	    timestamp = time.strftime('%Y%m%d_%H%M%S_%f')[:-3]
+	    frames_dir = base_path / f"raw_{timestamp}"
 
-        # Create writer
-        if settings['output']['recording_mode'] == "Frame Dump":
-            path = f"{base_path}/{video_prefix}_{timestamp}_frames"
-            writer = FrameDumper(path, w, h, settings['output']['video_fps'])
-            log.info("Using frame dump mode")
-        else:
-            path = f"{base_path}/{video_prefix}_{timestamp}.mp4"
-            writer = VideoWriter(path, w, h, settings['output']['video_fps'])
-            log.info("Using real-time video mode")
+	    # Get ROI for dimensions
+	    w = self.camera.get_parameter('Width').get('value', 640)
+	    h = self.camera.get_parameter('Height').get('value', 480)
 
-        # Start recording with limits
-        max_frames = settings['output']['limit_frames']
-        max_time = settings['output']['limit_time']
+	    worker = VideoWorker(
+	        str(frames_dir),  # Pass full path to frames directory
+	        w,
+	        h,
+	        settings['output']['video_fps'],
+	        settings['output']['keep_frames']
+	    )
 
-        if self.thread.start_recording(writer, max_frames, max_time):
-            self.window.preview.btn_record.setText("Stop Recording")
-            log.info(f"Recording started: {path}")
-        else:
-            log.error("Failed to start recording")
+	    # Start recording with limits
+	    max_frames = settings['output']['limit_frames']
+	    max_time = settings['output']['limit_time']
+
+	    if self.thread.start_recording(worker, max_frames, max_time):
+	        self.window.preview.btn_record.setText("Stop Recording")
+	        log.info(f"Recording started: {frames_dir}")
+	    else:
+	        log.error("Failed to start recording")
 
     def stop_recording(self):
         """Stop recording"""

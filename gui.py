@@ -544,7 +544,6 @@ class SettingsWidget(QWidget):
         roi_group.setLayout(roi_layout)
         layout.addWidget(roi_group)
 
-        # [Rest of the UI initialization remains the same]
         # Acquisition settings
         acq_group = QGroupBox("Acquisition")
         acq_layout = QFormLayout()
@@ -618,9 +617,10 @@ class SettingsWidget(QWidget):
         self.video_fps.setSuffix(" fps")
         output_layout.addRow("Video FPS:", self.video_fps)
 
-        self.recording_mode = QComboBox()
-        self.recording_mode.addItems(["Real-time", "Frame Dump"])
-        output_layout.addRow("Mode:", self.recording_mode)
+        # Keep frames checkbox
+        self.keep_frames = QCheckBox("Keep raw frame files")
+        self.keep_frames.setChecked(False)
+        output_layout.addRow("", self.keep_frames)
 
         self.preview_off = QCheckBox("Disable preview during recording")
         self.preview_off.setChecked(True)
@@ -774,7 +774,7 @@ class SettingsWidget(QWidget):
                 'image_prefix': self.image_prefix.text(),
                 'video_prefix': self.video_prefix.text(),
                 'video_fps': self.video_fps.value(),
-                'recording_mode': self.recording_mode.currentText(),
+                'keep_frames': self.keep_frames.isChecked(),
                 'preview_off': self.preview_off.isChecked(),
                 'limit_frames': self.limit_frames.value() if self.limit_frames_enable.isChecked() else None,
                 'limit_time': self.limit_time.value() if self.limit_time_enable.isChecked() else None
