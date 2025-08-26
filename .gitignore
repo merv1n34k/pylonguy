@@ -1,5 +1,8 @@
-# Ignore output directory
+# Ignore project-specific directories and files
 output/**
+log/**
+custom_preset.json
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
