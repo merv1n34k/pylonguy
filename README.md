@@ -5,24 +5,36 @@ Your friend for high-performance camera control GUI for Basler cameras with high
 ## Features
 
 - Real-time preview with FPS monitoring
+- Clear camera configuration with adaptation for camera capabilities
 - High-speed frame capture to raw files
 - Post-processing to video with configurable playback rate
-- ROI selection on preview
+- Interactive ROI selection on preview
 - Preset configurations for different capture scenarios (quality, speed,
   balanced)
-- Optional preview disable during recording for maximum throughput
 
 ## Installation
 
 ```bash
-# Install Basler Pylon SDK first from baslerweb.com
-pip install pypylon numpy PyQt5
+# It is recommended to use virutal environment (via venv or any other way)
+python -m venv pylonguy && source pylonguy/bin/activate
 
-# Ensure FFmpeg is installed for video generation
-python app.py
+pip install -r requirements.txt
 ```
 
+You also need to have `ffmpeg` at `PATH` for video processing. For macOS users, you can install it with `brew`:
+
+```bash
+brew install ffmpeg
+```
+
+Installing [pylon](https://www.baslerweb.com/pylon) might be required. See [known issues](https://github.com/basler/pypylon#known-issues) for further details.
+
 ## Usage
+
+```bash
+# To run the app
+python app.py
+```
 
 The application separates capture from video encoding for maximum performance:
 
