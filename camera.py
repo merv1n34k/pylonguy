@@ -22,7 +22,7 @@ class Camera:
                 log.error("No cameras found")
                 return False
 
-            log.info(f"Found {len(devices)} camera(s)")
+            log.debug(f"Camera - Found {len(devices)} camera(s)")
 
             self.device = pylon.InstantCamera(tlf.CreateDevice(devices[0]))
             self.device.Open()
@@ -35,7 +35,7 @@ class Camera:
             # Custom initial settings
             self.init_settings()
 
-            log.info(f"Camera opened: {model} (S/N: {serial})")
+            log.debug(f"Camera - Camera opened: {model} (S/N: {serial})")
             return True
         except Exception as e:
             log.error(f"Failed to open camera: {e}")
@@ -52,9 +52,12 @@ class Camera:
 
             # Disable auto features for consistent performance
             for auto_feature in ['ExposureAuto', 'GainAuto', 'BalanceWhiteAuto']:
-                self.set_parameter(auto_feature, 'Off')
+                try:
+                    self.set_parameter(auto_feature, 'Off')
+                except Exception as e:
+                    log.debug(f"Camera - Could not set {auto_feature}: {e}")
 
-            log.info("Initial camera settings applied")
+            log.debug("Initial camera settings applied")
         except Exception as e:
             log.warning(f"Could not apply all initial settings: {e}")
 
@@ -65,7 +68,7 @@ class Camera:
                 self.stop_grabbing()
                 if self.device.IsOpen():
                     self.device.Close()
-                log.info("Camera closed")
+                log.debug("Camera - Camera closed")
             except:
                 pass
             self.device = None
@@ -77,13 +80,13 @@ class Camera:
                 param = getattr(self.device, param_name)
                 if hasattr(param, 'SetValue'):
                     param.SetValue(value)
-                    log.debug(f"Set {param_name} = {value}")
+                    log.debug(f"Camera - Set {param_name} = {value}")
                     return True
         except Exception as e:
-            log.error(f"Failed to set {param_name}: {e}")
+            log.debug(f"Camera - Failed to set {param_name}: {e}")
         return False
 
-    def get_parameter(self, param_name: str) -> Dict:
+    def get_parameter(self, param_name: str, value_only = False) -> Dict:
         """General getter for any camera parameter - returns dict with value and limits"""
         result = {}
         try:
@@ -91,6 +94,8 @@ class Camera:
                 param = getattr(self.device, param_name)
                 if hasattr(param, 'Value'):
                     result['value'] = param.Value
+                    if value_only:
+                        return result
                 if hasattr(param, 'Min'):
                     result['min'] = param.Min
                 if hasattr(param, 'Max'):
@@ -100,7 +105,8 @@ class Camera:
                 if hasattr(param, 'Symbolics'):
                     result['symbolics'] = param.Symbolics
         except Exception as e:
-            log.debug(f"Could not get {param_name}: {e}")
+            #log.debug(f"Camera - Could not get {param_name}: {e}")
+            pass
         return result
 
     def apply_settings(self, settings: Dict) -> bool:
@@ -153,7 +159,7 @@ class Camera:
         try:
             self.device.StartGrabbing(pylon.GrabStrategy_OneByOne)
             self._is_grabbing = True
-            log.info("Started grabbing")
+            log.debug("Camera - Started grabbing")
         except Exception as e:
             log.error(f"Failed to start grabbing: {e}")
             self._is_grabbing = False
@@ -167,7 +173,7 @@ class Camera:
             if self.device.IsGrabbing():
                 self.device.StopGrabbing()
             self._is_grabbing = False
-            log.info("Stopped grabbing")
+            log.debug("Camera - Stopped grabbing")
         except Exception as e:
             log.error(f"Failed to stop grabbing: {e}")
             self._is_grabbing = False
@@ -202,12 +208,12 @@ class Camera:
     def get_resulting_framerate(self) -> float:
         """Get actual resulting frame rate from camera with fallbacks"""
         # Try ResultingFrameRate first
-        param = self.get_parameter('ResultingFrameRate')
+        param = self.get_parameter('ResultingFrameRate', True)
         if param and 'value' in param:
             return param.get('value', 0.0)
 
         # Try ResultingFrameRateAbs as fallback
-        param = self.get_parameter('ResultingFrameRateAbs')
+        param = self.get_parameter('ResultingFrameRateAbs', True)
         if param and 'value' in param:
             return param.get('value', 0.0)
 

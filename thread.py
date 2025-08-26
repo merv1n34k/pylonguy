@@ -38,7 +38,7 @@ class CameraThread(QThread):
         self.running = True
         self.last_stats_time = time.time()
 
-        log.info("Acquisition thread started")
+        log.debug("Thread - Acquisition thread started")
 
         # Start camera grabbing
         self.camera.start_grabbing()
@@ -81,7 +81,7 @@ class CameraThread(QThread):
 
         # Stop grabbing when thread ends
         self.camera.stop_grabbing()
-        log.info("Acquisition thread stopped")
+        log.debug("Thread - Acquisition thread stopped")
 
     def start_recording(self, writer, max_frames=None, max_time=None):
         """Start recording with given writer"""
@@ -93,7 +93,7 @@ class CameraThread(QThread):
 
         if self.writer.start():
             self.recording = True
-            log.info("Recording started")
+            log.debug("Thread - Recording started")
             return True
 
         log.error("Failed to start writer")
@@ -110,7 +110,7 @@ class CameraThread(QThread):
                 log.info(f"Video saved: {result}")
             self.writer = None
 
-        log.info(f"Recording stopped: {frames} frames")
+        log.debug(f"Thread - Recording stopped: {frames} frames")
         return frames
 
     def stop(self):
@@ -128,13 +128,13 @@ class CameraThread(QThread):
     def _check_limits(self) -> bool:
         """Check if recording limits reached"""
         if self.max_frames and self.frame_count >= self.max_frames:
-            log.info(f"Frame limit reached: {self.max_frames}")
+            log.debug(f"Thread - Frame limit reached: {self.max_frames}")
             return True
 
         if self.max_time:
             elapsed = time.time() - self.start_time
             if elapsed >= self.max_time:
-                log.info(f"Time limit reached: {self.max_time}s")
+                log.debug(f"Thread - Time limit reached: {self.max_time}s")
                 return True
 
         return False

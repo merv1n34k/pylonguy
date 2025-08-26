@@ -744,7 +744,7 @@ class SettingsWidget(QWidget):
             else:
                 widget.setEnabled(False)
                 widget.setToolTip(f"{param_name} not supported by this camera")
-            log.debug(f"Disabled {param_name} - not available in camera")
+            log.debug(f"GUI - Disabled {param_name} - not available in camera")
 
     def get_settings(self) -> dict:
         """Get all settings as dictionary"""
@@ -781,7 +781,6 @@ class SettingsWidget(QWidget):
             }
         }
 
-
 class LogWidget(QWidget):
     """Log display widget with controls"""
 
@@ -801,11 +800,11 @@ class LogWidget(QWidget):
         header_layout.addWidget(QLabel("Log"))
         header_layout.addStretch()
 
-        # Log level selector (simplified to just INFO and DEBUG)
+        # Log level selector
         self.level_combo = QComboBox()
         self.level_combo.addItems(['INFO', 'DEBUG'])
         self.level_combo.setCurrentText('INFO')
-        self.level_combo.currentTextChanged.connect(self.on_level_changed)
+        # Don't connect here - let app.py handle it
         header_layout.addWidget(QLabel("Level:"))
         header_layout.addWidget(self.level_combo)
 
@@ -848,7 +847,6 @@ class LogWidget(QWidget):
         """Clear the log display and content"""
         self.log.clear()
         self.log_content = []
-        log.info("Log cleared")
 
     def save_log(self):
         """Save log content to file"""
@@ -862,22 +860,11 @@ class LogWidget(QWidget):
             with open(filepath, 'w') as f:
                 f.write('\n'.join(self.log_content))
 
-            log.info(f"Log saved to {filepath}")
+            # Note: This will only appear if INFO level is selected
+            logging.getLogger("pylonguy").info(f"Log saved to {filepath}")
         except Exception as e:
-            log.error(f"Failed to save log: {e}")
+            logging.getLogger("pylonguy").error(f"Failed to save log: {e}")
 
-    def on_level_changed(self, level_text):
-        """Handle log level change"""
-        level_map = {
-            'DEBUG': logging.DEBUG,
-            'INFO': logging.INFO
-        }
-
-        level = level_map.get(level_text, logging.INFO)
-        logger = logging.getLogger("pylonguy")
-        logger.setLevel(level)
-
-        log.info(f"Log level changed to {level_text}")
 class MainWindow(QMainWindow):
     """Main application window"""
 

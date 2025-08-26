@@ -14,7 +14,7 @@ from thread import CameraThread
 from worker import VideoWriter, FrameDumper
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Set to DEBUG so all messages are available
     format='%(asctime)s [%(levelname)s] %(message)s',
     datefmt='%H:%M:%S'
 )
@@ -30,6 +30,7 @@ class PylonApp:
         self.window = MainWindow()
         self.last_frame = None
         self.current_selection = None
+        self.gui_handler = None
 
         # FPS estimation variables
         self.fps_frame_count = 0
@@ -57,6 +58,9 @@ class PylonApp:
         self.window.preview.btn_record.clicked.connect(self.toggle_recording)
         self.window.preview.selection_changed.connect(self._on_selection_changed)
 
+        # Connect log level change
+        self.window.log.level_combo.currentTextChanged.connect(self._on_log_level_changed)
+
     def _setup_logging(self):
         """Route logging to GUI"""
         class GuiLogHandler(logging.Handler):
@@ -68,10 +72,27 @@ class PylonApp:
                 msg = self.format(record)
                 self.widget.add(msg)
 
-        handler = GuiLogHandler(self.window.log)
-        handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', '%H:%M:%S'))
-        handler.setLevel(logging.INFO)  # Set default level
-        log.addHandler(handler)
+        self.gui_handler = GuiLogHandler(self.window.log)
+        self.gui_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', '%H:%M:%S'))
+        self.gui_handler.setLevel(logging.INFO)  # Default to INFO
+        log.addHandler(self.gui_handler)
+        log.setLevel(logging.INFO)  # Default logger to INFO
+
+    def _on_log_level_changed(self, level_text):
+        """Handle log level change from GUI"""
+        level_map = {
+            'DEBUG': logging.DEBUG,
+            'INFO': logging.INFO
+        }
+
+        level = level_map.get(level_text, logging.INFO)
+
+        # Update both logger and handler levels
+        log.setLevel(level)
+        if self.gui_handler:
+            self.gui_handler.setLevel(level)
+
+        log.info(f"Log level changed to {level_text}")
 
     def _update_fps(self):
         """Update FPS display from camera or estimation"""
@@ -180,8 +201,7 @@ class PylonApp:
             # Check for pixel format options
             pf_info = self.camera.get_parameter('PixelFormat')
             if pf_info and 'symbolics' in pf_info:
-                available = ['Mono8', 'Mono10', 'Mono10p']
-                options = [fmt for fmt in available if fmt in pf_info['symbolics']]
+                options = [fmt for fmt in pf_info['symbolics']]
                 if options:
                     self.window.settings.update_parameter_limits('PixelFormat', options=options)
 
