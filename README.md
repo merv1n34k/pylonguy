@@ -17,8 +17,8 @@ Your friend for high-performance camera control for Basler (and GenICam) cameras
 ## Installation
 
 ```bash
-# It is recommended to use virutal environment (via venv or any other way)
-python -m venv pylonguy && source pylonguy/bin/activate
+# It is recommended to use virutal environment (via venv or any other preferred way)
+python -m venv .venv && source .venv/bin/activate
 
 pip install -r requirements.txt
 ```
