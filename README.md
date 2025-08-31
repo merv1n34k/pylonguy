@@ -2,15 +2,17 @@
 
 Your friend for high-performance camera control GUI for Basler cameras with high-speed recording capabilities.
 
+![preview](https://raw.githubusercontent.com/merv1n34k/pylonguy/refs/heads/master/docs/preview.png)
+
 ## Features
 
 - Real-time preview with FPS monitoring
-- Clear camera configuration with adaptation for camera capabilities
+- Clear camera configuration with adapt to camera capabilities
 - High-speed frame capture to raw files
 - Post-processing to video with configurable playback rate
 - Interactive ROI selection on preview
 - Preset configurations for different capture scenarios (quality, speed,
-  balanced)
+  balanced, custom)
 
 ## Installation
 
