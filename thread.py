@@ -1,4 +1,4 @@
-"""Thread module - simplified acquisition thread"""
+"""Thread module - camera acquisition thread"""
 from PyQt5.QtCore import QThread, pyqtSignal
 import numpy as np
 import time
@@ -10,9 +10,9 @@ class CameraThread(QThread):
     """Simple camera acquisition thread"""
 
     # Signals
-    frame_ready = pyqtSignal(np.ndarray)  # For preview
-    stats_update = pyqtSignal(dict)  # For status display
-    recording_stopped = pyqtSignal()  # Auto-stop signal
+    frame_ready = pyqtSignal(np.ndarray)
+    stats_update = pyqtSignal(dict)
+    recording_stopped = pyqtSignal()
 
     def __init__(self, camera):
         super().__init__()
@@ -40,11 +40,9 @@ class CameraThread(QThread):
 
         log.debug("Thread - Acquisition thread started")
 
-        # Start camera grabbing
         self.camera.start_grabbing()
 
         while self.running:
-            # Grab frame - ONE method
             frame = self.camera.grab_frame()
 
             if frame is not None:
@@ -60,7 +58,6 @@ class CameraThread(QThread):
                                 self.stop_recording()
                                 break
 
-                # Handle preview
                 if self.preview_enabled:
                     # Must copy for GUI thread safety
                     self.frame_ready.emit(frame.copy())
@@ -79,7 +76,6 @@ class CameraThread(QThread):
                 # Small sleep if no frame available
                 self.msleep(1)
 
-        # Stop grabbing when thread ends
         self.camera.stop_grabbing()
         log.debug("Thread - Acquisition thread stopped")
 

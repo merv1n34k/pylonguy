@@ -13,8 +13,27 @@ class Camera:
         self.device = None
         self._is_grabbing = False
 
-    def open(self) -> bool:
-        """Open first available camera"""
+    @staticmethod
+    def enumerate_cameras() -> list:
+        """Get list of available cameras"""
+        try:
+            tlf = pylon.TlFactory.GetInstance()
+            devices = tlf.EnumerateDevices()
+            camera_list = []
+            for device in devices:
+                try:
+                    model = device.GetModelName()
+                    serial = device.GetSerialNumber()
+                    camera_list.append(f"{model} ({serial})")
+                except:
+                    camera_list.append("Unknown Camera")
+            return camera_list
+        except Exception as e:
+            log.debug(f"Camera enumeration failed: {e}")
+            return []
+
+    def open(self, camera_index: int = 0, apply_defaults: bool = True) -> bool:
+        """Open camera by index with optional default settings"""
         try:
             tlf = pylon.TlFactory.GetInstance()
             devices = tlf.EnumerateDevices()
@@ -22,9 +41,13 @@ class Camera:
                 log.error("No cameras found")
                 return False
 
+            if camera_index >= len(devices):
+                log.error(f"Camera index {camera_index} not available")
+                return False
+
             log.debug(f"Camera - Found {len(devices)} camera(s)")
 
-            self.device = pylon.InstantCamera(tlf.CreateDevice(devices[0]))
+            self.device = pylon.InstantCamera(tlf.CreateDevice(devices[camera_index]))
             self.device.Open()
 
             # Get device info
@@ -32,8 +55,9 @@ class Camera:
             model = device_info.GetModelName()
             serial = device_info.GetSerialNumber()
 
-            # Custom initial settings
-            self.init_settings()
+            # Apply initial settings only if requested
+            if apply_defaults:
+                self.init_settings()
 
             log.debug(f"Camera - Camera opened: {model} (S/N: {serial})")
             return True
@@ -207,15 +231,13 @@ class Camera:
 
     def get_resulting_framerate(self) -> float:
         """Get actual resulting frame rate from camera with fallbacks"""
-        # Try ResultingFrameRate first
         param = self.get_parameter('ResultingFrameRate', True)
         if param and 'value' in param:
             return param.get('value', 0.0)
 
-        # Try ResultingFrameRateAbs as fallback
         param = self.get_parameter('ResultingFrameRateAbs', True)
         if param and 'value' in param:
             return param.get('value', 0.0)
 
-        # Return 0 if neither exists - app will estimate
+        # Return 0 so app will estimate fps
         return 0.0

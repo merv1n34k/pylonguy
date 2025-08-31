@@ -14,7 +14,7 @@ from thread import CameraThread
 from worker import VideoWorker
 
 logging.basicConfig(
-    level=logging.DEBUG,  # Set to DEBUG so all messages are available
+    level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] %(message)s',
     datefmt='%H:%M:%S'
 )
@@ -39,6 +39,7 @@ class PylonApp:
 
         self._connect_signals()
         self._setup_logging()
+        self._update_camera_list()
 
         # Status update timer for FPS
         self.fps_timer = QTimer()
@@ -57,9 +58,20 @@ class PylonApp:
         self.window.preview.btn_capture.clicked.connect(self.capture_frame)
         self.window.preview.btn_record.clicked.connect(self.toggle_recording)
         self.window.preview.selection_changed.connect(self._on_selection_changed)
+        self.window.preview.offset_x_changed.connect(self._on_offset_x_changed)
+        self.window.preview.offset_y_changed.connect(self._on_offset_y_changed)
 
         # Connect log level change
         self.window.log.level_combo.currentTextChanged.connect(self._on_log_level_changed)
+
+    def _update_camera_list(self):
+        """Update camera list in combo box"""
+        cameras = Camera.enumerate_cameras()
+        self.window.settings.camera_combo.clear()
+        if cameras:
+            self.window.settings.camera_combo.addItems(cameras)
+        else:
+            self.window.settings.camera_combo.addItem("No cameras detected")
 
     def _setup_logging(self):
         """Route logging to GUI"""
@@ -74,9 +86,9 @@ class PylonApp:
 
         self.gui_handler = GuiLogHandler(self.window.log)
         self.gui_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', '%H:%M:%S'))
-        self.gui_handler.setLevel(logging.INFO)  # Default to INFO
+        self.gui_handler.setLevel(logging.INFO)
         log.addHandler(self.gui_handler)
-        log.setLevel(logging.INFO)  # Default logger to INFO
+        log.setLevel(logging.INFO)
 
     def _on_log_level_changed(self, level_text):
         """Handle log level change from GUI"""
@@ -167,12 +179,18 @@ class PylonApp:
         self.window.preview.show_message("No Camera")
         log.info("Live preview stopped")
 
-    # [Keep all other methods unchanged from previous version]
     def connect_camera(self):
-        """Connect to camera"""
-        if self.camera.open():
+        """Connect to camera with optional defaults"""
+        camera_index = self.window.settings.camera_combo.currentIndex()
+        if camera_index < 0 or self.window.settings.camera_combo.currentText() == "No cameras detected":
+            log.error("No camera selected")
+            return
+
+        apply_defaults = self.window.settings.load_defaults_check.isChecked()
+
+        if self.camera.open(camera_index, apply_defaults):
             # Update GUI parameter limits from camera
-            params_to_update = ['Width', 'Height', 'OffsetX', 'OffsetY', 'ExposureTime', 'Gain', 'AcquisitionFrameRate']
+            params_to_update = ['Width', 'Height', 'ExposureTime', 'Gain', 'AcquisitionFrameRate']
 
             for param in params_to_update:
                 info = self.camera.get_parameter(param)
@@ -204,6 +222,22 @@ class PylonApp:
                 options = [fmt for fmt in pf_info['symbolics']]
                 if options:
                     self.window.settings.update_parameter_limits('PixelFormat', options=options)
+
+            # Update slider ranges based on camera capabilities
+            offset_x_info = self.camera.get_parameter('OffsetX')
+            offset_y_info = self.camera.get_parameter('OffsetY')
+            if offset_x_info:
+                self.window.preview.offset_x_slider.setRange(
+                    offset_x_info.get('min', 0),
+                    offset_x_info.get('max', 4096)
+                )
+                self.window.preview.offset_x_slider.setValue(offset_x_info.get('value', 0))
+            if offset_y_info:
+                self.window.preview.offset_y_slider.setRange(
+                    offset_y_info.get('min', 0),
+                    offset_y_info.get('max', 3072)
+                )
+                self.window.preview.offset_y_slider.setValue(offset_y_info.get('value', 0))
 
             self.window.settings.btn_connect.setEnabled(False)
             self.window.settings.btn_disconnect.setEnabled(True)
@@ -397,11 +431,10 @@ class PylonApp:
 	    h = self.camera.get_parameter('Height').get('value', 480)
 
 	    worker = VideoWorker(
-	        str(frames_dir),  # Pass full path to frames directory
+	        str(frames_dir),
 	        w,
 	        h,
-	        settings['output']['video_fps'],
-	        settings['output']['keep_frames']
+	        settings['output']['video_fps']
 	    )
 
 	    # Start recording with limits
@@ -436,6 +469,22 @@ class PylonApp:
     def _on_selection_changed(self, rect):
         """Handle selection changes"""
         self.current_selection = rect
+
+    def _on_offset_x_changed(self, value):
+        """Handle X offset slider change"""
+        if self.camera.device:
+            # Update camera immediately
+            self.camera.set_parameter('OffsetX', value)
+            # Update settings widget to stay in sync
+            self.window.settings.roi_offset_x.setValue(value)
+
+    def _on_offset_y_changed(self, value):
+        """Handle Y offset slider change"""
+        if self.camera.device:
+            # Update camera immediately
+            self.camera.set_parameter('OffsetY', value)
+            # Update settings widget to stay in sync
+            self.window.settings.roi_offset_y.setValue(value)
 
     def _on_recording_stopped(self):
         """Handle auto-stop of recording"""

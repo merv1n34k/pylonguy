@@ -14,7 +14,9 @@ class PreviewWidget(QWidget):
     """Camera preview with status display and selection tool"""
 
     # Signals
-    selection_changed = pyqtSignal(object)  # Emits QRect or None
+    selection_changed = pyqtSignal(object) # Emits QRect or None
+    offset_x_changed = pyqtSignal(int)
+    offset_y_changed = pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
@@ -33,7 +35,7 @@ class PreviewWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Preview display - 70% of widget height
+        # Preview display
         self.display = QLabel("No Camera")
         self.display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.display.setStyleSheet("""
@@ -46,9 +48,9 @@ class PreviewWidget(QWidget):
         self.display.setAlignment(Qt.AlignCenter)
         self.display.setMouseTracking(True)
         self.display.installEventFilter(self)
-        layout.addWidget(self.display, 70)  # 70% stretch factor
+        layout.addWidget(self.display, 70)
 
-        # Status bar - 10% of widget height
+        # Status bar
         status_widget = QWidget()
         status_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         status_widget.setStyleSheet("QWidget { background: #1a1a1a; }")
@@ -144,9 +146,9 @@ class PreviewWidget(QWidget):
         status_layout.addWidget(sel_widget, 1)
 
         status_widget.setLayout(status_layout)
-        layout.addWidget(status_widget, 10)  # 10% stretch factor
+        layout.addWidget(status_widget, 10)
 
-        # Control buttons - 20% of widget height
+        # Control buttons
         button_widget = QWidget()
         button_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         button_widget.setStyleSheet("""
@@ -187,7 +189,82 @@ class PreviewWidget(QWidget):
         button_layout.addWidget(self.btn_clear_selection)
 
         button_widget.setLayout(button_layout)
-        layout.addWidget(button_widget, 20)  # 20% stretch factor
+        layout.addWidget(button_widget, 20)
+
+        # Offset sliders
+        slider_widget = QWidget()
+        slider_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        slider_widget.setStyleSheet("QWidget { background: #2a2a2a; padding: 5px; }")
+
+        slider_layout = QVBoxLayout()
+        slider_layout.setContentsMargins(10, 5, 10, 5)
+        slider_layout.setSpacing(5)
+
+        # X Offset slider
+        x_layout = QHBoxLayout()
+        x_label = QLabel("Offset X:")
+        x_label.setStyleSheet("color: white; min-width: 60px;")
+        self.offset_x_slider = QSlider(Qt.Horizontal)
+        self.offset_x_slider.setRange(0, 4096)
+        self.offset_x_slider.setValue(0)
+        self.offset_x_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #555;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                width: 18px;
+                background: #0af;
+                border-radius: 9px;
+                margin: -6px 0;
+            }
+        """)
+        self.offset_x_value = QLabel("0")
+        self.offset_x_value.setStyleSheet("color: white; min-width: 40px;")
+        x_layout.addWidget(x_label)
+        x_layout.addWidget(self.offset_x_slider)
+        x_layout.addWidget(self.offset_x_value)
+
+        # Y Offset slider
+        y_layout = QHBoxLayout()
+        y_label = QLabel("Offset Y:")
+        y_label.setStyleSheet("color: white; min-width: 60px;")
+        self.offset_y_slider = QSlider(Qt.Horizontal)
+        self.offset_y_slider.setRange(0, 3072)
+        self.offset_y_slider.setValue(0)
+        self.offset_y_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #555;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                width: 18px;
+                background: #0af;
+                border-radius: 9px;
+                margin: -6px 0;
+            }
+        """)
+        self.offset_y_value = QLabel("0")
+        self.offset_y_value.setStyleSheet("color: white; min-width: 40px;")
+        y_layout.addWidget(y_label)
+        y_layout.addWidget(self.offset_y_slider)
+        y_layout.addWidget(self.offset_y_value)
+
+        slider_layout.addLayout(x_layout)
+        slider_layout.addLayout(y_layout)
+        slider_widget.setLayout(slider_layout)
+
+        layout.addWidget(slider_widget, 5)
+
+        # Connect slider signals
+        self.offset_x_slider.valueChanged.connect(lambda v: self.offset_x_value.setText(str(v)))
+        self.offset_y_slider.valueChanged.connect(lambda v: self.offset_y_value.setText(str(v)))
+
+        # Connect to signals:
+        self.offset_x_slider.valueChanged.connect(self.offset_x_changed.emit)
+        self.offset_y_slider.valueChanged.connect(self.offset_y_changed.emit)
 
         self.setLayout(layout)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -387,11 +464,14 @@ class SettingsWidget(QWidget):
         self.presets = {}
         self.init_ui()
         self.init_presets()
-        self.load_custom_preset()  # Load custom preset on startup
 
     def init_presets(self):
-        """Initialize preset configurations"""
-        self.presets = {
+        """Initialize preset configurations from JSON file"""
+        self.presets = {}
+        preset_file = Path("presets.json")
+
+        # Default presets
+        default_presets = {
             'Quality': {
                 'Width': 1920,
                 'Height': 1080,
@@ -405,10 +485,10 @@ class SettingsWidget(QWidget):
             'Speed': {
                 'Width': 320,
                 'Height': 240,
-                'BinningHorizontal': '2',
-                'BinningVertical': '2',
+                'BinningHorizontal': '1',
+                'BinningVertical': '1',
                 'ExposureTime': 100,
-                'Gain': 10,
+                'Gain': 0,
                 'PixelFormat': 'Mono8',
                 'SensorReadoutMode': 'Fast'
             },
@@ -418,28 +498,45 @@ class SettingsWidget(QWidget):
                 'BinningHorizontal': '1',
                 'BinningVertical': '1',
                 'ExposureTime': 500,
-                'Gain': 5,
+                'Gain': 0,
                 'PixelFormat': 'Mono8',
                 'SensorReadoutMode': 'Normal'
             }
         }
 
-    def load_custom_preset(self):
-        """Load custom preset from JSON file"""
-        preset_file = Path("custom_preset.json")
         if preset_file.exists():
             try:
                 with open(preset_file, 'r') as f:
-                    custom = json.load(f)
-                    self.presets['Custom'] = custom
-                    log.info("Loaded custom preset from file")
+                    self.presets = json.load(f)
+                    log.info("Loaded presets from file")
             except Exception as e:
-                log.error(f"Failed to load custom preset: {e}")
+                log.error(f"Failed to load presets: {e}")
+                self.presets = default_presets
+        else:
+            self.presets = default_presets
+            self._save_presets_to_file()
 
-    def save_custom_preset(self):
-        """Save current settings as custom preset"""
+        for preset in self.presets.keys():
+            self.preset_combo.addItem(preset)
+
+    def _save_presets_to_file(self):
+        """Save all presets to JSON file"""
+        try:
+            with open("presets.json", 'w') as f:
+                json.dump(self.presets, f, indent=2)
+            log.debug("Saved presets to file")
+        except Exception as e:
+            log.error(f"Failed to save presets: {e}")
+
+    def save_preset(self):
+        """Save current settings as named preset"""
+        preset_name = self.preset_name_input.text().strip()
+        if not preset_name:
+            log.warning("Please enter a preset name")
+            return
+
         # Get current values from widgets
-        custom = {
+        preset = {
             'Width': self.roi_width.value(),
             'Height': self.roi_height.value(),
             'OffsetX': self.roi_offset_x.value(),
@@ -453,20 +550,23 @@ class SettingsWidget(QWidget):
         }
 
         # Save to presets dict
-        self.presets['Custom'] = custom
+        self.presets[preset_name] = preset
 
-        # Save to JSON file
-        try:
-            with open("custom_preset.json", 'w') as f:
-                json.dump(custom, f, indent=2)
+        # Save to file
+        self._save_presets_to_file()
 
-            # Add Custom to combo box if not there
-            if self.preset_combo.findText('Custom') < 0:
-                self.preset_combo.addItem('Custom')
+        # Update combo box if new preset
+        if self.preset_combo.findText(preset_name) < 0:
+            self.preset_combo.addItem(preset_name)
+            # Re-sort items
+            items = [self.preset_combo.itemText(i) for i in range(self.preset_combo.count())]
+            items.sort()
+            self.preset_combo.clear()
+            self.preset_combo.addItems(items)
 
-            log.info("Saved custom preset")
-        except Exception as e:
-            log.error(f"Failed to save custom preset: {e}")
+        # Clear input field
+        self.preset_name_input.clear()
+        log.info(f"Saved preset: {preset_name}")
 
     def init_ui(self):
         scroll = QScrollArea()
@@ -479,34 +579,52 @@ class SettingsWidget(QWidget):
 
         # Connection controls
         conn_group = QGroupBox("Connection")
-        conn_layout = QHBoxLayout()
+        conn_layout = QVBoxLayout()
+
+        # First row: Camera selection and load defaults checkbox
+        select_layout = QHBoxLayout()
+        select_layout.addWidget(QLabel("Camera:"))
+        self.camera_combo = QComboBox()
+        self.camera_combo.addItem("Detecting...")
+        select_layout.addWidget(self.camera_combo, 1)
+        self.load_defaults_check = QCheckBox("Load Defaults")
+        self.load_defaults_check.setChecked(True)
+        select_layout.addWidget(self.load_defaults_check)
+
+        # Second row: Connect and Disconnect buttons
+        button_layout = QHBoxLayout()
         self.btn_connect = QPushButton("Connect")
         self.btn_disconnect = QPushButton("Disconnect")
-        conn_layout.addWidget(self.btn_connect)
-        conn_layout.addWidget(self.btn_disconnect)
+        button_layout.addWidget(self.btn_connect)
+        button_layout.addWidget(self.btn_disconnect)
+
+        conn_layout.addLayout(select_layout)
+        conn_layout.addLayout(button_layout)
         conn_group.setLayout(conn_layout)
         layout.addWidget(conn_group)
-
-        # Preset controls
         preset_group = QGroupBox("Presets")
         preset_layout = QFormLayout()
 
+        # First row: select preset and apply button
+        preset_select_layout = QHBoxLayout()
         self.preset_combo = QComboBox()
-        self.preset_combo.addItems(['Quality', 'Balanced', 'Speed'])
-        # Add Custom if it exists
-        if 'Custom' in self.presets:
-            self.preset_combo.addItem('Custom')
-
-        preset_buttons = QHBoxLayout()
+        self.preset_combo.addItems(sorted(self.presets.keys()))
         self.btn_apply_preset = QPushButton("Apply Preset")
         self.btn_apply_preset.clicked.connect(self.apply_preset)
-        self.btn_save_custom = QPushButton("Save as Custom")
-        self.btn_save_custom.clicked.connect(self.save_custom_preset)
-        preset_buttons.addWidget(self.btn_apply_preset)
-        preset_buttons.addWidget(self.btn_save_custom)
+        preset_select_layout.addWidget(self.preset_combo)
+        preset_select_layout.addWidget(self.btn_apply_preset)
 
-        preset_layout.addRow("Select:", self.preset_combo)
-        preset_layout.addRow("", preset_buttons)
+        # Second row: preset name and save button
+        preset_save_layout = QHBoxLayout()
+        self.preset_name_input = QLineEdit()
+        self.preset_name_input.setPlaceholderText("Enter preset name...")
+        self.btn_save_preset = QPushButton("Save as Preset")
+        self.btn_save_preset.clicked.connect(self.save_preset)
+        preset_save_layout.addWidget(self.preset_name_input)
+        preset_save_layout.addWidget(self.btn_save_preset)
+
+        preset_layout.addRow("Select:", preset_select_layout)
+        preset_layout.addRow("Name:", preset_save_layout)
         preset_group.setLayout(preset_layout)
         layout.addWidget(preset_group)
 
@@ -617,11 +735,6 @@ class SettingsWidget(QWidget):
         self.video_fps.setSuffix(" fps")
         output_layout.addRow("Video FPS:", self.video_fps)
 
-        # Keep frames checkbox
-        self.keep_frames = QCheckBox("Keep raw frame files")
-        self.keep_frames.setChecked(False)
-        output_layout.addRow("", self.keep_frames)
-
         self.preview_off = QCheckBox("Disable preview during recording")
         self.preview_off.setChecked(True)
         output_layout.addRow("", self.preview_off)
@@ -673,7 +786,6 @@ class SettingsWidget(QWidget):
             log.info(f"Applied preset: {preset_name}")
             self.settings_changed.emit()
 
-    # [Keep all other methods unchanged]
     def update_parameter_limits(self, param_name: str, min_val=None, max_val=None, inc=None, options=None):
         """Update parameter limits/options from app.py"""
         widget_map = {
@@ -774,7 +886,6 @@ class SettingsWidget(QWidget):
                 'image_prefix': self.image_prefix.text(),
                 'video_prefix': self.video_prefix.text(),
                 'video_fps': self.video_fps.value(),
-                'keep_frames': self.keep_frames.isChecked(),
                 'preview_off': self.preview_off.isChecked(),
                 'limit_frames': self.limit_frames.value() if self.limit_frames_enable.isChecked() else None,
                 'limit_time': self.limit_time.value() if self.limit_time_enable.isChecked() else None
@@ -804,6 +915,8 @@ class LogWidget(QWidget):
         self.level_combo = QComboBox()
         self.level_combo.addItems(['INFO', 'DEBUG'])
         self.level_combo.setCurrentText('INFO')
+        self.level_combo.setStyleSheet("color: white;")
+
         # Don't connect here - let app.py handle it
         header_layout.addWidget(QLabel("Level:"))
         header_layout.addWidget(self.level_combo)
@@ -892,14 +1005,14 @@ class MainWindow(QMainWindow):
 
         # Right: settings + log (fixed width)
         right_widget = QWidget()
-        right_widget.setFixedWidth(400)  # Fixed width for settings
+        right_widget.setFixedWidth(400)
         right_layout = QVBoxLayout()
         right_layout.setContentsMargins(5, 5, 5, 5)
         right_layout.addWidget(self.settings, 3)
         right_layout.addWidget(self.log, 1)
 
         right_widget.setLayout(right_layout)
-        layout.addWidget(right_widget, 0)  # No stretch for fixed width
+        layout.addWidget(right_widget, 0)
 
         central.setLayout(layout)
         self.setCentralWidget(central)

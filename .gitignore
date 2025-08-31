@@ -1,7 +1,7 @@
 # Ignore project-specific directories and files
 output/**
 log/**
-custom_preset.json
+presets.json
 
 
 # Byte-compiled / optimized / DLL files

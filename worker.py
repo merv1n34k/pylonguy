@@ -1,7 +1,6 @@
 """Worker module - simple frame writer with post-processing"""
 import subprocess
 import numpy as np
-import shutil
 from pathlib import Path
 from queue import Queue, Empty
 from threading import Thread
@@ -14,13 +13,12 @@ log = logging.getLogger("pylonguy")
 class VideoWorker:
     """Simple frame writer that dumps frames then creates video"""
 
-    def __init__(self, frames_dir: str, width: int, height: int, fps: float, keep_frames: bool = False):
+    def __init__(self, frames_dir: str, width: int, height: int, fps: float):
         # Frames directory path (full path passed from app.py)
         self.frames_dir = Path(frames_dir)
         self.width = width
         self.height = height
         self.fps = fps
-        self.keep_frames = keep_frames
 
         # Simple queue for frame writing
         self.queue = Queue(maxsize=10000)
@@ -32,8 +30,6 @@ class VideoWorker:
         """Start frame writer thread"""
         try:
             # Create frames directory
-            if self.frames_dir.exists():
-                shutil.rmtree(self.frames_dir)
             self.frames_dir.mkdir(parents=True, exist_ok=True)
 
             self.active = True
@@ -85,13 +81,6 @@ class VideoWorker:
         # Create video from frames
         video_path = self._make_video()
 
-        # Clean up frames if not keeping
-        if not self.keep_frames and video_path:
-            shutil.rmtree(self.frames_dir)
-            log.info(f"Removed frame directory: {self.frames_dir}")
-        elif self.keep_frames:
-            log.info(f"Frame files kept in: {self.frames_dir}")
-
         return video_path
 
     def _writer_thread(self):
@@ -131,7 +120,7 @@ class VideoWorker:
 
             # Use pattern matching to read all numbered raw files
             input_pattern = str(self.frames_dir / "%08d.raw")
-            
+
             # FFmpeg command using image2 demuxer for raw video frames
             cmd = [
                 "ffmpeg", "-y",
@@ -140,7 +129,7 @@ class VideoWorker:
                 "-pixel_format", "gray",
                 "-video_size", f"{self.width}x{self.height}",
                 "-i", input_pattern,
-                "-c:v", "rawvideo",  # Lossless raw video in AVI container
+                "-c:v", "rawvideo",
                 "-pix_fmt", "gray",
                 str(video_path)
             ]
