@@ -1,6 +1,6 @@
 """GUI module - user interface elements"""
 from PyQt5.QtCore import Qt, pyqtSignal, QRect, QPoint
-from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QPen
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QPen, QTransform
 from PyQt5.QtWidgets import *
 import numpy as np
 import logging
@@ -27,6 +27,16 @@ class PreviewWidget(QWidget):
         self.mouse_pos = None
         self.image_rect = None
         self.original_frame_size = None
+
+        # Kymograph buffer
+        self.kymo_buffer = None
+        self.kymo_row = 0
+        self.kymo_mode = False
+
+        # Transform settings
+        self.flip_x = False
+        self.flip_y = False
+        self.rotation = 0
 
         self.init_ui()
 
@@ -85,16 +95,16 @@ class PreviewWidget(QWidget):
         rec_layout.addWidget(self.rec_status, 1)
         rec_widget.setLayout(rec_layout)
 
-        # Frames Section
+        # Frames/Lines Section
         frames_widget = QWidget()
         frames_layout = QHBoxLayout()
         frames_layout.setContentsMargins(0, 0, 0, 0)
         frames_layout.setSpacing(0)
-        frames_label = QLabel(" FRAMES ")
-        frames_label.setStyleSheet("background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;")
+        self.frames_label = QLabel(" FRAMES ")  # Will change to LINES in kymo mode
+        self.frames_label.setStyleSheet("background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;")
         self.rec_frames = QLabel(" 0 ")
         self.rec_frames.setStyleSheet("background: #222; color: #0f0; padding: 5px 10px;")
-        frames_layout.addWidget(frames_label)
+        frames_layout.addWidget(self.frames_label)
         frames_layout.addWidget(self.rec_frames, 1)
         frames_widget.setLayout(frames_layout)
 
@@ -269,10 +279,32 @@ class PreviewWidget(QWidget):
         self.setLayout(layout)
         self.setFocusPolicy(Qt.StrongFocus)
 
+    def set_kymo_mode(self, enabled: bool, width: int = 640, lines: int = 2000):
+        """Enable or disable kymograph mode"""
+        self.kymo_mode = enabled
+        if enabled:
+            self.kymo_buffer = np.full((lines, width), 255, dtype=np.uint8)
+            self.kymo_row = 0
+            self.frames_label.setText(" LINES ")
+            log.info(f"Kymograph mode enabled: {width}x{lines} buffer")
+        else:
+            self.kymo_buffer = None
+            self.kymo_row = 0
+            self.frames_label.setText(" FRAMES ")
+            log.info("Kymograph mode disabled")
+
+    def set_transform(self, flip_x: bool, flip_y: bool, rotation: int):
+        """Set preview transform settings"""
+        self.flip_x = flip_x
+        self.flip_y = flip_y
+        self.rotation = rotation
+        if self.current_pixmap:
+            self._update_display()
+
     def resizeEvent(self, event):
         """Handle resize to update preview scaling"""
         super().resizeEvent(event)
-        if self.current_pixmap:
+        if self.current_pixmap or self.kymo_mode:
             self._update_display()
 
     def update_status(self, **kwargs):
@@ -298,66 +330,194 @@ class PreviewWidget(QWidget):
             self.roi_value.setText(f" {kwargs['roi']} ")
 
     def show_frame(self, frame: np.ndarray):
-        """Display frame in preview"""
+        """Display frame in preview or add to kymograph"""
         if frame is None:
             return
 
         h, w = frame.shape[:2]
         self.original_frame_size = (w, h)
 
-        if frame.dtype == np.uint16:
-            frame = (frame >> 8).astype(np.uint8)
+        if self.kymo_mode and self.kymo_buffer is not None:
+            # In kymograph mode, collapse frame to 1×W profile
+            profile = np.median(frame, axis=0).astype(np.uint8)
 
-        if len(frame.shape) == 2:
-            if not frame.flags['C_CONTIGUOUS']:
-                frame = np.ascontiguousarray(frame)
-            img = QImage(frame.data, w, h, w, QImage.Format_Grayscale8)
+            # Check if buffer width matches frame width
+            if self.kymo_buffer.shape[1] != len(profile):
+                # Reinitialize buffer with correct width
+                lines = self.kymo_buffer.shape[0]
+                log.debug(f"Resizing kymograph buffer from {self.kymo_buffer.shape[1]} to {len(profile)} width")
+                self.kymo_buffer = np.full((lines, len(profile)), 255, dtype=np.uint8)
+                self.kymo_row = 0
+
+            self.kymo_buffer[self.kymo_row, :] = profile
+            self.kymo_row = (self.kymo_row + 1) % self.kymo_buffer.shape[0]
+            self._update_display()
         else:
-            if not frame.flags['C_CONTIGUOUS']:
-                frame = np.ascontiguousarray(frame)
-            img = QImage(frame.data, w, h, w * 3, QImage.Format_RGB888)
+            # Normal ROI mode
+            if frame.dtype == np.uint16:
+                frame = (frame >> 8).astype(np.uint8)
 
-        pixmap = QPixmap.fromImage(img)
-        if pixmap.isNull():
-            log.error("Failed to create pixmap from frame")
-            return
+            if len(frame.shape) == 2:
+                if not frame.flags['C_CONTIGUOUS']:
+                    frame = np.ascontiguousarray(frame)
+                img = QImage(frame.data, w, h, w, QImage.Format_Grayscale8)
+            else:
+                if not frame.flags['C_CONTIGUOUS']:
+                    frame = np.ascontiguousarray(frame)
+                img = QImage(frame.data, w, h, w * 3, QImage.Format_RGB888)
 
-        self.current_pixmap = pixmap.scaled(
-            self.display.size(),
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
-        )
+            pixmap = QPixmap.fromImage(img)
+            if pixmap.isNull():
+                log.error("Failed to create pixmap from frame")
+                return
 
-        self.image_rect = self._calculate_image_rect()
-        self._update_display()
+            self.current_pixmap = pixmap.scaled(
+                self.display.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+
+            self.image_rect = self._calculate_image_rect()
+            self._update_display()
 
     def _calculate_image_rect(self) -> QRect:
         """Calculate where the scaled image is positioned"""
-        if not self.current_pixmap:
+        if not self.current_pixmap and not self.kymo_mode:
             return QRect()
 
         display_size = self.display.size()
-        img_size = self.current_pixmap.size()
 
-        x = (display_size.width() - img_size.width()) // 2
-        y = (display_size.height() - img_size.height()) // 2
+        if self.kymo_mode and self.kymo_buffer is not None:
+            # For kymograph, calculate based on buffer size
+            h, w = self.kymo_buffer.shape
+            aspect = w / h
+            display_aspect = display_size.width() / display_size.height()
 
-        return QRect(x, y, img_size.width(), img_size.height())
+            if aspect > display_aspect:
+                # Width limited
+                img_width = display_size.width()
+                img_height = int(img_width / aspect)
+            else:
+                # Height limited
+                img_height = display_size.height()
+                img_width = int(img_height * aspect)
+
+            x = (display_size.width() - img_width) // 2
+            y = (display_size.height() - img_height) // 2
+            return QRect(x, y, img_width, img_height)
+        elif self.current_pixmap:
+            img_size = self.current_pixmap.size()
+            x = (display_size.width() - img_size.width()) // 2
+            y = (display_size.height() - img_size.height()) // 2
+            return QRect(x, y, img_size.width(), img_size.height())
+
+        return QRect()
+
+    def _apply_transform(self, pixmap: QPixmap) -> QPixmap:
+        """Apply flip and rotation transforms to pixmap with fixed viewport"""
+        if not self.flip_x and not self.flip_y and self.rotation == 0:
+            return pixmap
+
+        # First apply the rotation to a larger canvas
+        transform = QTransform()
+
+        # Apply rotation
+        if self.rotation != 0:
+            transform.rotate(self.rotation)
+
+        # Apply flips
+        if self.flip_x:
+            transform.scale(-1, 1)
+        if self.flip_y:
+            transform.scale(1, -1)
+
+        # Transform the pixmap
+        rotated = pixmap.transformed(transform, Qt.SmoothTransformation)
+
+        # Calculate the inscribed rectangle after rotation
+        if self.rotation != 0:
+            import math
+            angle_rad = abs(self.rotation * math.pi / 180)
+            cos_a = abs(math.cos(angle_rad))
+            sin_a = abs(math.sin(angle_rad))
+
+            # Original dimensions
+            w, h = float(pixmap.width()), float(pixmap.height())
+
+            # Calculate inscribed rectangle size with safety margin
+            if w >= h:
+                inscribed_h = h / (cos_a + sin_a * h / w)
+                inscribed_w = inscribed_h * w / h
+            else:
+                inscribed_w = w / (cos_a + sin_a * w / h)
+                inscribed_h = inscribed_w * h / w
+
+            # Apply small safety margin to ensure no corners visible
+            margin = 1.02  # 2% smaller to ensure clean edges
+            if self.kymo_mode:
+                margin = 1.1
+            inscribed_w = int(inscribed_w / margin)
+            inscribed_h = int(inscribed_h / margin)
+
+            # Crop to center
+            x = (rotated.width() - inscribed_w) // 2
+            y = (rotated.height() - inscribed_h) // 2
+
+            cropped = rotated.copy(x, y, inscribed_w, inscribed_h)
+
+            # Scale back to original size
+            return cropped.scaled(pixmap.width(), pixmap.height(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+
+        return rotated
 
     def _update_display(self):
-        """Update display with current frame and selection overlay"""
-        if not self.current_pixmap:
-            return
-
+        """Update display with current frame/kymograph and selection overlay"""
         display_pixmap = QPixmap(self.display.size())
         display_pixmap.fill(Qt.black)
 
         painter = QPainter(display_pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        if self.image_rect:
-            painter.drawPixmap(self.image_rect, self.current_pixmap)
+        if self.kymo_mode and self.kymo_buffer is not None:
+            # Create kymograph display
+            if self.kymo_row == 0:
+                view = self.kymo_buffer.copy()
+            else:
+                # Most recent line at bottom
+                view = np.vstack([self.kymo_buffer[self.kymo_row:, :],
+                                  self.kymo_buffer[:self.kymo_row, :]])
 
+            # Limit to display height to avoid memory issues
+            max_lines = min(view.shape[0], self.display.height())
+            if max_lines < view.shape[0]:
+                view = view[-max_lines:, :]
+
+            h, w = view.shape
+            img = QImage(view.data, w, h, w, QImage.Format_Grayscale8)
+            pixmap = QPixmap.fromImage(img)
+
+            # Apply transforms
+            pixmap = self._apply_transform(pixmap)
+
+            # Scale to fit display
+            scaled = pixmap.scaled(
+                self.display.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+
+            self.image_rect = self._calculate_image_rect()
+            if self.image_rect:
+                painter.drawPixmap(self.image_rect, scaled)
+
+        elif self.current_pixmap:
+            # Apply transforms
+            transformed = self._apply_transform(self.current_pixmap)
+
+            if self.image_rect:
+                painter.drawPixmap(self.image_rect, transformed)
+
+        # Draw selection overlay (works for both modes)
         if self.selection_rect or (self.selecting and self.select_start and self.mouse_pos):
             pen = QPen(QColor(0, 180, 255), 2, Qt.DashLine)
             pen.setDashPattern([5, 3])
@@ -373,12 +533,35 @@ class PreviewWidget(QWidget):
                 temp_rect = QRect(self.select_start, self.mouse_pos).normalized()
                 painter.drawRect(temp_rect)
 
+        # Add transform indicator if any transforms are active
+        if self.flip_x or self.flip_y or self.rotation != 0:
+            transform_text = []
+            if self.flip_x:
+                transform_text.append("FlipX")
+            if self.flip_y:
+                transform_text.append("FlipY")
+            if self.rotation != 0:
+                transform_text.append(f"Rot{self.rotation}°")
+
+            painter.setPen(QColor(255, 255, 0))
+            painter.drawText(10, 20, " ".join(transform_text) + " (preview only)")
+
         painter.end()
         self.display.setPixmap(display_pixmap)
 
+    def get_kymograph_buffer(self) -> np.ndarray:
+        """Get current kymograph buffer for capture"""
+        if self.kymo_mode and self.kymo_buffer is not None:
+            if self.kymo_row == 0:
+                return self.kymo_buffer.copy()
+            else:
+                # Return buffer with most recent line at bottom
+                return np.vstack([self.kymo_buffer[self.kymo_row:, :],
+                                  self.kymo_buffer[:self.kymo_row, :]])
+
     def eventFilter(self, obj, event):
         """Handle mouse events for selection"""
-        if obj != self.display or not self.image_rect:
+        if obj != self.display:
             return super().eventFilter(obj, event)
 
         if event.type() == event.MouseMove:
@@ -388,18 +571,19 @@ class PreviewWidget(QWidget):
 
         elif event.type() == event.MouseButtonPress:
             if event.button() == Qt.LeftButton:
-                if self.image_rect.contains(event.pos()):
-                    self.select_start = event.pos()
-                    self.selecting = True
-                    self.selection_rect = None
+                self.select_start = event.pos()
+                self.selecting = True
+                self.selection_rect = None
 
         elif event.type() == event.MouseButtonRelease:
             if event.button() == Qt.LeftButton and self.selecting:
                 self.selecting = False
                 if self.select_start and self.mouse_pos and self.select_start != self.mouse_pos:
                     self.selection_rect = QRect(self.select_start, self.mouse_pos).normalized()
-                    self.selection_rect = self.selection_rect.intersected(self.image_rect)
-                    if self.selection_rect.isValid():
+                    # Simple boundary check using display size
+                    display_rect = QRect(0, 0, self.display.width(), self.display.height())
+                    self.selection_rect = self.selection_rect.intersected(display_rect)
+                    if self.selection_rect.isValid() and self.selection_rect.width() > 5 and self.selection_rect.height() > 5:
                         pixel_rect = self._map_to_frame_coords(self.selection_rect)
                         self.selection_changed.emit(pixel_rect)
                     else:
@@ -412,14 +596,27 @@ class PreviewWidget(QWidget):
 
     def _map_to_frame_coords(self, display_rect: QRect) -> QRect:
         """Map display coordinates to frame coordinates"""
-        if not self.image_rect or not self.original_frame_size:
+        if not self.original_frame_size:
             return QRect()
 
-        rel_x = display_rect.x() - self.image_rect.x()
-        rel_y = display_rect.y() - self.image_rect.y()
+        # Use image_rect if available, otherwise use full display
+        if self.image_rect:
+            img_rect = self.image_rect
+        else:
+            # Estimate image rect based on display size
+            img_rect = QRect(0, 0, self.display.width(), self.display.height())
 
-        scale_x = self.original_frame_size[0] / self.image_rect.width()
-        scale_y = self.original_frame_size[1] / self.image_rect.height()
+        # Calculate relative position
+        rel_x = display_rect.x() - img_rect.x()
+        rel_y = display_rect.y() - img_rect.y()
+
+        # Calculate scale factors
+        if img_rect.width() > 0 and img_rect.height() > 0:
+            scale_x = self.original_frame_size[0] / img_rect.width()
+            scale_y = self.original_frame_size[1] / img_rect.height()
+        else:
+            scale_x = 1.0
+            scale_y = 1.0
 
         frame_x = int(rel_x * scale_x)
         frame_y = int(rel_y * scale_y)
@@ -458,6 +655,8 @@ class SettingsWidget(QWidget):
     """Settings panel with all controls"""
 
     settings_changed = pyqtSignal()
+    mode_changed = pyqtSignal(str)  # New signal for mode changes
+    transform_changed = pyqtSignal(bool, bool, int)  # flip_x, flip_y, rotation
 
     def __init__(self):
         super().__init__()
@@ -501,6 +700,16 @@ class SettingsWidget(QWidget):
                 'Gain': 0,
                 'PixelFormat': 'Mono8',
                 'SensorReadoutMode': 'Normal'
+            },
+            'Kymograph': {
+                'Width': 128,
+                'Height': 8,
+                'BinningHorizontal': '1',
+                'BinningVertical': '1',
+                'ExposureTime': 10,
+                'Gain': 0,
+                'PixelFormat': 'Mono8',
+                'SensorReadoutMode': 'Fast'
             }
         }
 
@@ -602,6 +811,8 @@ class SettingsWidget(QWidget):
         conn_layout.addLayout(button_layout)
         conn_group.setLayout(conn_layout)
         layout.addWidget(conn_group)
+
+        # Preset controls
         preset_group = QGroupBox("Presets")
         preset_layout = QFormLayout()
 
@@ -659,6 +870,28 @@ class SettingsWidget(QWidget):
         roi_layout.addRow("Binning H:", self.binning_horizontal)
         roi_layout.addRow("Binning V:", self.binning_vertical)
 
+        # Add transform controls
+        transform_layout = QHBoxLayout()
+        transform_layout.addWidget(QLabel("Flip:"))
+        self.flip_x_check = QCheckBox("X")
+        self.flip_y_check = QCheckBox("Y")
+        transform_layout.addWidget(self.flip_x_check)
+        transform_layout.addWidget(self.flip_y_check)
+        transform_layout.addWidget(QLabel("Rotate:"))
+        self.rotation_spin = QSpinBox()
+        self.rotation_spin.setRange(-360, 360)
+        self.rotation_spin.setSuffix("°")
+        self.rotation_spin.setSingleStep(90)
+        transform_layout.addWidget(self.rotation_spin)
+        transform_layout.addStretch()
+
+        roi_layout.addRow("Transform:", transform_layout)
+
+        # Connect transform signals
+        self.flip_x_check.toggled.connect(self._on_transform_changed)
+        self.flip_y_check.toggled.connect(self._on_transform_changed)
+        self.rotation_spin.valueChanged.connect(self._on_transform_changed)
+
         roi_group.setLayout(roi_layout)
         layout.addWidget(roi_group)
 
@@ -695,7 +928,7 @@ class SettingsWidget(QWidget):
 
         self.framerate_enable = QCheckBox("Enable Frame Rate Limit")
         self.framerate = QDoubleSpinBox()
-        self.framerate.setRange(1, 10000)
+        self.framerate.setRange(1, 100000)  # Increased for kymograph mode
         self.framerate.setValue(30)
         self.framerate.setSuffix(" Hz")
         self.framerate.setEnabled(False)
@@ -717,27 +950,43 @@ class SettingsWidget(QWidget):
         framerate_group.setLayout(framerate_layout)
         layout.addWidget(framerate_group)
 
-        # Output settings
-        output_group = QGroupBox("Output")
-        output_layout = QFormLayout()
+        # Capture settings (renamed from Output)
+        capture_group = QGroupBox("Capture")
+        capture_layout = QFormLayout()
+
+        # Mode selection
+        self.capture_mode = QComboBox()
+        self.capture_mode.addItems(['ROI Capture', 'Kymograph'])
+        self.capture_mode.currentTextChanged.connect(self._on_mode_changed)
+        capture_layout.addRow("Mode:", self.capture_mode)
+
+        # Kymograph settings (initially hidden)
+        self.kymo_lines = QSpinBox()
+        self.kymo_lines.setRange(100, 10000)
+        self.kymo_lines.setValue(2000)
+        self.kymo_lines_label = QLabel("Buffer Lines:")
+        capture_layout.addRow(self.kymo_lines_label, self.kymo_lines)
+        self.kymo_lines.setVisible(False)
+        self.kymo_lines_label.setVisible(False)
 
         self.output_path = QLineEdit("./output")
         self.image_prefix = QLineEdit("img")
         self.video_prefix = QLineEdit("vid")
 
-        output_layout.addRow("Path:", self.output_path)
-        output_layout.addRow("Image Prefix:", self.image_prefix)
-        output_layout.addRow("Video Prefix:", self.video_prefix)
+        capture_layout.addRow("Path:", self.output_path)
+        capture_layout.addRow("Image Prefix:", self.image_prefix)
+        capture_layout.addRow("Video Prefix:", self.video_prefix)
 
         self.video_fps = QDoubleSpinBox()
         self.video_fps.setRange(1, 120)
         self.video_fps.setValue(24)
         self.video_fps.setSuffix(" fps")
-        output_layout.addRow("Video FPS:", self.video_fps)
+        self.video_fps_label = QLabel("Video FPS:")
+        capture_layout.addRow(self.video_fps_label, self.video_fps)
 
         self.preview_off = QCheckBox("Disable preview during recording")
         self.preview_off.setChecked(True)
-        output_layout.addRow("", self.preview_off)
+        capture_layout.addRow("", self.preview_off)
 
         self.limit_frames_enable = QCheckBox("Limit frames")
         self.limit_frames = QSpinBox()
@@ -754,13 +1003,13 @@ class SettingsWidget(QWidget):
         self.limit_time.setEnabled(False)
         self.limit_time_enable.toggled.connect(self.limit_time.setEnabled)
 
-        output_layout.addRow(self.limit_frames_enable)
-        output_layout.addRow("Max frames:", self.limit_frames)
-        output_layout.addRow(self.limit_time_enable)
-        output_layout.addRow("Max time:", self.limit_time)
+        capture_layout.addRow(self.limit_frames_enable)
+        capture_layout.addRow("Max frames:", self.limit_frames)
+        capture_layout.addRow(self.limit_time_enable)
+        capture_layout.addRow("Max time:", self.limit_time)
 
-        output_group.setLayout(output_layout)
-        layout.addWidget(output_group)
+        capture_group.setLayout(capture_layout)
+        layout.addWidget(capture_group)
 
         # Apply button
         self.btn_apply = QPushButton("Apply Settings")
@@ -775,6 +1024,35 @@ class SettingsWidget(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(scroll)
         self.setLayout(main_layout)
+
+    def _on_mode_changed(self, mode: str):
+        """Handle capture mode change"""
+        is_kymo = mode == 'Kymograph'
+
+        # Show/hide kymograph-specific settings
+        self.kymo_lines.setVisible(is_kymo)
+        self.kymo_lines_label.setVisible(is_kymo)
+
+        # Hide video FPS for kymograph mode
+        self.video_fps.setVisible(not is_kymo)
+        self.video_fps_label.setVisible(not is_kymo)
+
+        # Update frame limit label
+        if is_kymo:
+            self.limit_frames_enable.setText("Limit lines")
+        else:
+            self.limit_frames_enable.setText("Limit frames")
+
+        self.mode_changed.emit(mode)
+        log.info(f"Capture mode changed to: {mode}")
+
+    def _on_transform_changed(self):
+        """Handle transform settings change"""
+        self.transform_changed.emit(
+            self.flip_x_check.isChecked(),
+            self.flip_y_check.isChecked(),
+            self.rotation_spin.value()
+        )
 
     def apply_preset(self):
         """Apply selected preset"""
@@ -881,7 +1159,9 @@ class SettingsWidget(QWidget):
                 'throughput_enabled': self.throughput_enable.isChecked() and self.throughput_enable.isEnabled(),
                 'throughput_limit': self.throughput_limit.value()
             },
-            'output': {
+            'capture': {  # Renamed from 'output'
+                'mode': self.capture_mode.currentText(),
+                'kymo_lines': self.kymo_lines.value(),
                 'path': self.output_path.text(),
                 'image_prefix': self.image_prefix.text(),
                 'video_prefix': self.video_prefix.text(),
@@ -889,6 +1169,11 @@ class SettingsWidget(QWidget):
                 'preview_off': self.preview_off.isChecked(),
                 'limit_frames': self.limit_frames.value() if self.limit_frames_enable.isChecked() else None,
                 'limit_time': self.limit_time.value() if self.limit_time_enable.isChecked() else None
+            },
+            'transform': {
+                'flip_x': self.flip_x_check.isChecked(),
+                'flip_y': self.flip_y_check.isChecked(),
+                'rotation': self.rotation_spin.value()
             }
         }
 
@@ -915,7 +1200,6 @@ class LogWidget(QWidget):
         self.level_combo = QComboBox()
         self.level_combo.addItems(['INFO', 'DEBUG'])
         self.level_combo.setCurrentText('INFO')
-        self.level_combo.setStyleSheet("color: white;")
 
         # Don't connect here - let app.py handle it
         header_layout.addWidget(QLabel("Level:"))

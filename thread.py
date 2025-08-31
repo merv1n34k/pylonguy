@@ -1,4 +1,4 @@
-"""Thread module - camera acquisition thread"""
+"""Thread module - camera acquisition thread with kymograph support"""
 from PyQt5.QtCore import QThread, pyqtSignal
 import numpy as np
 import time
@@ -7,16 +7,17 @@ import logging
 log = logging.getLogger("pylonguy")
 
 class CameraThread(QThread):
-    """Simple camera acquisition thread"""
+    """Camera acquisition thread with kymograph support"""
 
     # Signals
     frame_ready = pyqtSignal(np.ndarray)
     stats_update = pyqtSignal(dict)
     recording_stopped = pyqtSignal()
 
-    def __init__(self, camera):
+    def __init__(self, camera, kymo_mode: bool = False):
         super().__init__()
         self.camera = camera
+        self.kymo_mode = kymo_mode
         self.running = False
         self.recording = False
         self.writer = None
@@ -38,7 +39,7 @@ class CameraThread(QThread):
         self.running = True
         self.last_stats_time = time.time()
 
-        log.debug("Thread - Acquisition thread started")
+        log.debug(f"Thread - Acquisition thread started (kymo_mode={self.kymo_mode})")
 
         self.camera.start_grabbing()
 
@@ -51,7 +52,7 @@ class CameraThread(QThread):
                     if self.writer.write(frame):
                         self.frame_count += 1
 
-                        # Check limits periodically (every 100 frames)
+                        # Check limits periodically (every 100 frames/lines)
                         if self.frame_count % 100 == 0:
                             if self._check_limits():
                                 self.recording_stopped.emit()
@@ -89,24 +90,27 @@ class CameraThread(QThread):
 
         if self.writer.start():
             self.recording = True
-            log.debug("Thread - Recording started")
+            log.debug(f"Thread - Recording started ({'kymograph' if self.kymo_mode else 'frames'})")
             return True
 
         log.error("Failed to start writer")
         return False
 
     def stop_recording(self):
-        """Stop recording and return frame count"""
+        """Stop recording and return frame/line count"""
         frames = self.frame_count
         self.recording = False
 
         if self.writer:
             result = self.writer.stop()
             if isinstance(result, str) and result:
-                log.info(f"Video saved: {result}")
+                if self.kymo_mode:
+                    log.info(f"Kymograph saved: {result}")
+                else:
+                    log.info(f"Video saved: {result}")
             self.writer = None
 
-        log.debug(f"Thread - Recording stopped: {frames} frames")
+        log.debug(f"Thread - Recording stopped: {frames} {'lines' if self.kymo_mode else 'frames'}")
         return frames
 
     def stop(self):
@@ -124,7 +128,7 @@ class CameraThread(QThread):
     def _check_limits(self) -> bool:
         """Check if recording limits reached"""
         if self.max_frames and self.frame_count >= self.max_frames:
-            log.debug(f"Thread - Frame limit reached: {self.max_frames}")
+            log.debug(f"Thread - {'Line' if self.kymo_mode else 'Frame'} limit reached: {self.max_frames}")
             return True
 
         if self.max_time:

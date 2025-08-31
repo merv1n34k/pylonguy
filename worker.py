@@ -1,4 +1,5 @@
-"""Worker module - simple frame writer with post-processing"""
+
+"""Worker module - frame and kymograph writer with post-processing"""
 import subprocess
 import numpy as np
 from pathlib import Path
@@ -11,7 +12,7 @@ log = logging.getLogger("pylonguy")
 
 
 class VideoWorker:
-    """Simple frame writer that dumps frames then creates video"""
+    """Frame writer that dumps frames then creates video"""
 
     def __init__(self, frames_dir: str, width: int, height: int, fps: float):
         # Frames directory path (full path passed from app.py)
@@ -154,3 +155,103 @@ class VideoWorker:
         except Exception as e:
             log.error(f"Video creation failed: {e}")
             return ""
+
+
+class KymographWorker:
+    """Kymograph writer that saves lines to .kmg file with embedded header"""
+
+    def __init__(self, output_path: str, width: int, buffer_size: int = 1000):
+        self.output_path = Path(output_path)
+        self.width = width
+        self.buffer_size = buffer_size
+
+        # Buffer for batched writes
+        self.buffer = []
+        self.line_count = 0
+        self.file = None
+        self.active = False
+
+    def start(self) -> bool:
+        """Start kymograph writer"""
+        try:
+            # Create output directory
+            self.output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Open file in write binary mode
+            self.file = open(self.output_path, 'wb')
+
+            # Write header: magic bytes "KMG1" + width (2 bytes, little-endian)
+            header = b'KMG1' + self.width.to_bytes(2, 'little')
+            self.file.write(header)
+
+            self.active = True
+            self.line_count = 0
+
+            log.info(f"Kymograph writer started: {self.output_path}")
+            return True
+
+        except Exception as e:
+            log.error(f"Failed to start kymograph writer: {e}")
+            return False
+
+    def write(self, frame: np.ndarray) -> bool:
+        """Add frame (will be collapsed to line) to kymograph"""
+        if not self.active or self.file is None:
+            return False
+
+        try:
+            # Collapse frame to 1×W profile using median
+            if len(frame.shape) == 2:
+                profile = np.median(frame, axis=0).astype(np.uint8)
+            else:
+                # For color, convert to grayscale first
+                gray = np.mean(frame, axis=2)
+                profile = np.median(gray, axis=0).astype(np.uint8)
+
+            # Add to buffer
+            self.buffer.append(profile)
+            self.line_count += 1
+
+            # Flush buffer if full
+            if len(self.buffer) >= self.buffer_size:
+                self._flush_buffer()
+
+            return True
+
+        except Exception as e:
+            log.debug(f"Kymograph write error: {e}")
+            return False
+
+    def _flush_buffer(self):
+        """Write buffered lines to file"""
+        if not self.buffer or not self.file:
+            return
+
+        try:
+            # Stack lines and write as contiguous block
+            block = np.vstack(self.buffer)
+            self.file.write(block.tobytes())
+            self.file.flush()  # Ensure data is written
+
+            log.debug(f"Flushed {len(self.buffer)} lines to kymograph")
+            self.buffer = []
+
+        except Exception as e:
+            log.error(f"Failed to flush kymograph buffer: {e}")
+
+    def stop(self) -> str:
+        """Stop writing and close file"""
+        self.active = False
+
+        # Flush remaining buffer
+        if self.buffer:
+            self._flush_buffer()
+
+        # Close file
+        if self.file:
+            self.file.close()
+            self.file = None
+
+        log.info(f"Kymograph saved: {self.output_path} ({self.line_count} lines, width={self.width})")
+
+        return str(self.output_path)
