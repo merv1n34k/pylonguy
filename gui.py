@@ -28,10 +28,10 @@ class PreviewWidget(QWidget):
         self.image_rect = None
         self.original_frame_size = None
 
-        # Kymograph buffer
-        self.kymo_buffer = None
-        self.kymo_row = 0
-        self.kymo_mode = False
+        # Waterfall buffer
+        self.waterfall_buffer = None
+        self.waterfall_row = 0
+        self.waterfall_mode = False
 
         # Transform settings
         self.flip_x = False
@@ -100,7 +100,7 @@ class PreviewWidget(QWidget):
         frames_layout = QHBoxLayout()
         frames_layout.setContentsMargins(0, 0, 0, 0)
         frames_layout.setSpacing(0)
-        self.frames_label = QLabel(" FRAMES ")  # Will change to LINES in kymo mode
+        self.frames_label = QLabel(" FRAMES ")  # Will change to LINES in waterfall mode
         self.frames_label.setStyleSheet("background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;")
         self.rec_frames = QLabel(" 0 ")
         self.rec_frames.setStyleSheet("background: #222; color: #0f0; padding: 5px 10px;")
@@ -217,6 +217,8 @@ class PreviewWidget(QWidget):
         self.offset_x_slider = QSlider(Qt.Horizontal)
         self.offset_x_slider.setRange(0, 4096)
         self.offset_x_slider.setValue(0)
+        self.offset_x_slider.setSingleStep(16)
+        self.offset_x_slider.setPageStep(16)
         self.offset_x_slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 height: 6px;
@@ -243,6 +245,8 @@ class PreviewWidget(QWidget):
         self.offset_y_slider = QSlider(Qt.Horizontal)
         self.offset_y_slider.setRange(0, 3072)
         self.offset_y_slider.setValue(0)
+        self.offset_y_slider.setSingleStep(16)
+        self.offset_y_slider.setPageStep(16)
         self.offset_y_slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 height: 6px;
@@ -279,32 +283,34 @@ class PreviewWidget(QWidget):
         self.setLayout(layout)
         self.setFocusPolicy(Qt.StrongFocus)
 
-    def set_kymo_mode(self, enabled: bool, width: int = 640, lines: int = 2000):
-        """Enable or disable kymograph mode"""
-        self.kymo_mode = enabled
+    def set_waterfall_mode(self, enabled: bool, width: int = 640, lines: int = 500):
+        """Enable or disable waterfall mode with smaller default buffer"""
+        self.waterfall_mode = enabled
         if enabled:
-            self.kymo_buffer = np.full((lines, width), 255, dtype=np.uint8)
-            self.kymo_row = 0
+            # Use smaller buffer for better performance
+            lines = min(lines, 500)  # Cap at 500 lines for responsiveness
+            self.waterfall_buffer = np.full((lines, width), 255, dtype=np.uint8)
+            self.waterfall_row = 0
             self.frames_label.setText(" LINES ")
-            log.info(f"Kymograph mode enabled: {width}x{lines} buffer")
+            log.info(f"Waterfall mode enabled: {width}x{lines} buffer")
         else:
-            self.kymo_buffer = None
-            self.kymo_row = 0
+            self.waterfall_buffer = None
+            self.waterfall_row = 0
             self.frames_label.setText(" FRAMES ")
-            log.info("Kymograph mode disabled")
+            log.info("Waterfall mode disabled")
 
     def set_transform(self, flip_x: bool, flip_y: bool, rotation: int):
         """Set preview transform settings"""
         self.flip_x = flip_x
         self.flip_y = flip_y
-        self.rotation = rotation
+        self.rotation = int(rotation) if isinstance(rotation, str) else rotation
         if self.current_pixmap:
             self._update_display()
 
     def resizeEvent(self, event):
         """Handle resize to update preview scaling"""
         super().resizeEvent(event)
-        if self.current_pixmap or self.kymo_mode:
+        if self.current_pixmap or self.waterfall_mode:
             self._update_display()
 
     def update_status(self, **kwargs):
@@ -330,27 +336,27 @@ class PreviewWidget(QWidget):
             self.roi_value.setText(f" {kwargs['roi']} ")
 
     def show_frame(self, frame: np.ndarray):
-        """Display frame in preview or add to kymograph"""
+        """Display frame in preview or add to waterfall"""
         if frame is None:
             return
 
         h, w = frame.shape[:2]
         self.original_frame_size = (w, h)
 
-        if self.kymo_mode and self.kymo_buffer is not None:
-            # In kymograph mode, collapse frame to 1×W profile
+        if self.waterfall_mode and self.waterfall_buffer is not None:
+            # In waterfall mode, collapse frame to 1×W profile
             profile = np.median(frame, axis=0).astype(np.uint8)
 
             # Check if buffer width matches frame width
-            if self.kymo_buffer.shape[1] != len(profile):
+            if self.waterfall_buffer.shape[1] != len(profile):
                 # Reinitialize buffer with correct width
-                lines = self.kymo_buffer.shape[0]
-                log.debug(f"Resizing kymograph buffer from {self.kymo_buffer.shape[1]} to {len(profile)} width")
-                self.kymo_buffer = np.full((lines, len(profile)), 255, dtype=np.uint8)
-                self.kymo_row = 0
+                lines = self.waterfall_buffer.shape[0]
+                log.debug(f"Resizing waterfall buffer from {self.waterfall_buffer.shape[1]} to {len(profile)} width")
+                self.waterfall_buffer = np.full((lines, len(profile)), 255, dtype=np.uint8)
+                self.waterfall_row = 0
 
-            self.kymo_buffer[self.kymo_row, :] = profile
-            self.kymo_row = (self.kymo_row + 1) % self.kymo_buffer.shape[0]
+            self.waterfall_buffer[self.waterfall_row, :] = profile
+            self.waterfall_row = (self.waterfall_row + 1) % self.waterfall_buffer.shape[0]
             self._update_display()
         else:
             # Normal ROI mode
@@ -374,7 +380,7 @@ class PreviewWidget(QWidget):
             self.current_pixmap = pixmap.scaled(
                 self.display.size(),
                 Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
+                Qt.FastTransformation  # Use fast scaling for lower latency
             )
 
             self.image_rect = self._calculate_image_rect()
@@ -382,14 +388,14 @@ class PreviewWidget(QWidget):
 
     def _calculate_image_rect(self) -> QRect:
         """Calculate where the scaled image is positioned"""
-        if not self.current_pixmap and not self.kymo_mode:
+        if not self.current_pixmap and not self.waterfall_mode:
             return QRect()
 
         display_size = self.display.size()
 
-        if self.kymo_mode and self.kymo_buffer is not None:
-            # For kymograph, calculate based on buffer size
-            h, w = self.kymo_buffer.shape
+        if self.waterfall_mode and self.waterfall_buffer is not None:
+            # For waterfall, calculate based on buffer size
+            h, w = self.waterfall_buffer.shape
             aspect = w / h
             display_aspect = display_size.width() / display_size.height()
 
@@ -414,14 +420,13 @@ class PreviewWidget(QWidget):
         return QRect()
 
     def _apply_transform(self, pixmap: QPixmap) -> QPixmap:
-        """Apply flip and rotation transforms to pixmap with fixed viewport"""
+        """Apply flip and rotation transforms to pixmap"""
         if not self.flip_x and not self.flip_y and self.rotation == 0:
             return pixmap
 
-        # First apply the rotation to a larger canvas
         transform = QTransform()
 
-        # Apply rotation
+        # Apply rotation (only 0, 90, 180, 270 degrees)
         if self.rotation != 0:
             transform.rotate(self.rotation)
 
@@ -432,65 +437,42 @@ class PreviewWidget(QWidget):
             transform.scale(1, -1)
 
         # Transform the pixmap
-        rotated = pixmap.transformed(transform, Qt.SmoothTransformation)
-
-        # Calculate the inscribed rectangle after rotation
-        if self.rotation != 0:
-            import math
-            angle_rad = abs(self.rotation * math.pi / 180)
-            cos_a = abs(math.cos(angle_rad))
-            sin_a = abs(math.sin(angle_rad))
-
-            # Original dimensions
-            w, h = float(pixmap.width()), float(pixmap.height())
-
-            # Calculate inscribed rectangle size with safety margin
-            if w >= h:
-                inscribed_h = h / (cos_a + sin_a * h / w)
-                inscribed_w = inscribed_h * w / h
-            else:
-                inscribed_w = w / (cos_a + sin_a * w / h)
-                inscribed_h = inscribed_w * h / w
-
-            # Apply small safety margin to ensure no corners visible
-            margin = 1.02  # 2% smaller to ensure clean edges
-            if self.kymo_mode:
-                margin = 1.1
-            inscribed_w = int(inscribed_w / margin)
-            inscribed_h = int(inscribed_h / margin)
-
-            # Crop to center
-            x = (rotated.width() - inscribed_w) // 2
-            y = (rotated.height() - inscribed_h) // 2
-
-            cropped = rotated.copy(x, y, inscribed_w, inscribed_h)
-
-            # Scale back to original size
-            return cropped.scaled(pixmap.width(), pixmap.height(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-
-        return rotated
+        return pixmap.transformed(transform, Qt.FastTransformation)
 
     def _update_display(self):
-        """Update display with current frame/kymograph and selection overlay"""
+        """Update display with current frame/waterfall and selection overlay"""
         display_pixmap = QPixmap(self.display.size())
         display_pixmap.fill(Qt.black)
 
         painter = QPainter(display_pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        if self.kymo_mode and self.kymo_buffer is not None:
-            # Create kymograph display
-            if self.kymo_row == 0:
-                view = self.kymo_buffer.copy()
-            else:
-                # Most recent line at bottom
-                view = np.vstack([self.kymo_buffer[self.kymo_row:, :],
-                                  self.kymo_buffer[:self.kymo_row, :]])
+        if self.waterfall_mode and self.waterfall_buffer is not None:
+            # Create waterfall display - only process visible portion
+            max_display_lines = min(self.display.height(), 500)  # Limit processing
 
-            # Limit to display height to avoid memory issues
-            max_lines = min(view.shape[0], self.display.height())
-            if max_lines < view.shape[0]:
-                view = view[-max_lines:, :]
+            # Get only the portion we'll display
+            if self.waterfall_buffer.shape[0] <= max_display_lines:
+                # Buffer smaller than display - use all
+                if self.waterfall_row == 0:
+                    view = self.waterfall_buffer
+                else:
+                    view = np.vstack([self.waterfall_buffer[self.waterfall_row:, :],
+                                      self.waterfall_buffer[:self.waterfall_row, :]])
+            else:
+                # Buffer larger - only process what we'll show
+                if self.waterfall_row == 0:
+                    view = self.waterfall_buffer[-max_display_lines:, :]
+                else:
+                    # Get the most recent lines only
+                    lines_to_show = min(max_display_lines, self.waterfall_buffer.shape[0])
+                    if self.waterfall_row >= lines_to_show:
+                        view = self.waterfall_buffer[self.waterfall_row-lines_to_show:self.waterfall_row, :]
+                    else:
+                        # Wrap around
+                        part1 = self.waterfall_buffer[self.waterfall_row-lines_to_show:, :]
+                        part2 = self.waterfall_buffer[:self.waterfall_row, :]
+                        view = np.vstack([part1, part2])
 
             h, w = view.shape
             img = QImage(view.data, w, h, w, QImage.Format_Grayscale8)
@@ -503,7 +485,7 @@ class PreviewWidget(QWidget):
             scaled = pixmap.scaled(
                 self.display.size(),
                 Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
+                Qt.FastTransformation  # Use fast scaling for lower latency
             )
 
             self.image_rect = self._calculate_image_rect()
@@ -549,15 +531,15 @@ class PreviewWidget(QWidget):
         painter.end()
         self.display.setPixmap(display_pixmap)
 
-    def get_kymograph_buffer(self) -> np.ndarray:
-        """Get current kymograph buffer for capture"""
-        if self.kymo_mode and self.kymo_buffer is not None:
-            if self.kymo_row == 0:
-                return self.kymo_buffer.copy()
+    def get_waterfall_buffer(self) -> np.ndarray:
+        """Get current waterfall buffer for capture"""
+        if self.waterfall_mode and self.waterfall_buffer is not None:
+            if self.waterfall_row == 0:
+                return self.waterfall_buffer.copy()
             else:
                 # Return buffer with most recent line at bottom
-                return np.vstack([self.kymo_buffer[self.kymo_row:, :],
-                                  self.kymo_buffer[:self.kymo_row, :]])
+                return np.vstack([self.waterfall_buffer[self.waterfall_row:, :],
+                                  self.waterfall_buffer[:self.waterfall_row, :]])
 
     def eventFilter(self, obj, event):
         """Handle mouse events for selection"""
@@ -701,7 +683,7 @@ class SettingsWidget(QWidget):
                 'PixelFormat': 'Mono8',
                 'SensorReadoutMode': 'Normal'
             },
-            'Kymograph': {
+            'waterfall': {
                 'Width': 128,
                 'Height': 8,
                 'BinningHorizontal': '1',
@@ -878,10 +860,8 @@ class SettingsWidget(QWidget):
         transform_layout.addWidget(self.flip_x_check)
         transform_layout.addWidget(self.flip_y_check)
         transform_layout.addWidget(QLabel("Rotate:"))
-        self.rotation_spin = QSpinBox()
-        self.rotation_spin.setRange(-360, 360)
-        self.rotation_spin.setSuffix("°")
-        self.rotation_spin.setSingleStep(90)
+        self.rotation_spin = QComboBox()
+        self.rotation_spin.addItems(['0', '90', '180', '270'])
         transform_layout.addWidget(self.rotation_spin)
         transform_layout.addStretch()
 
@@ -890,7 +870,7 @@ class SettingsWidget(QWidget):
         # Connect transform signals
         self.flip_x_check.toggled.connect(self._on_transform_changed)
         self.flip_y_check.toggled.connect(self._on_transform_changed)
-        self.rotation_spin.valueChanged.connect(self._on_transform_changed)
+        self.rotation_spin.currentIndexChanged.connect(self._on_transform_changed)
 
         roi_group.setLayout(roi_layout)
         layout.addWidget(roi_group)
@@ -901,7 +881,7 @@ class SettingsWidget(QWidget):
 
         self.exposure = QDoubleSpinBox()
         self.exposure.setRange(10, 1000000)
-        self.exposure.setValue(1000)
+        self.exposure.setValue(150)
         self.exposure.setSuffix(" μs")
 
         self.gain = QDoubleSpinBox()
@@ -928,7 +908,7 @@ class SettingsWidget(QWidget):
 
         self.framerate_enable = QCheckBox("Enable Frame Rate Limit")
         self.framerate = QDoubleSpinBox()
-        self.framerate.setRange(1, 100000)  # Increased for kymograph mode
+        self.framerate.setRange(1, 100000)
         self.framerate.setValue(30)
         self.framerate.setSuffix(" Hz")
         self.framerate.setEnabled(False)
@@ -956,18 +936,18 @@ class SettingsWidget(QWidget):
 
         # Mode selection
         self.capture_mode = QComboBox()
-        self.capture_mode.addItems(['ROI Capture', 'Kymograph'])
+        self.capture_mode.addItems(['ROI Capture', 'Waterfall'])
         self.capture_mode.currentTextChanged.connect(self._on_mode_changed)
         capture_layout.addRow("Mode:", self.capture_mode)
 
-        # Kymograph settings (initially hidden)
-        self.kymo_lines = QSpinBox()
-        self.kymo_lines.setRange(100, 10000)
-        self.kymo_lines.setValue(2000)
-        self.kymo_lines_label = QLabel("Buffer Lines:")
-        capture_layout.addRow(self.kymo_lines_label, self.kymo_lines)
-        self.kymo_lines.setVisible(False)
-        self.kymo_lines_label.setVisible(False)
+        # waterfall settings (initially hidden)
+        self.waterfall_lines = QSpinBox()
+        self.waterfall_lines.setRange(100, 2000)
+        self.waterfall_lines.setValue(500)  # Reduced from 2000 for better performance
+        self.waterfall_lines_label = QLabel("Buffer Lines:")
+        capture_layout.addRow(self.waterfall_lines_label, self.waterfall_lines)
+        self.waterfall_lines.setVisible(False)
+        self.waterfall_lines_label.setVisible(False)
 
         self.output_path = QLineEdit("./output")
         self.image_prefix = QLineEdit("img")
@@ -1027,18 +1007,18 @@ class SettingsWidget(QWidget):
 
     def _on_mode_changed(self, mode: str):
         """Handle capture mode change"""
-        is_kymo = mode == 'Kymograph'
+        is_waterfall = mode == 'Waterfall'
 
-        # Show/hide kymograph-specific settings
-        self.kymo_lines.setVisible(is_kymo)
-        self.kymo_lines_label.setVisible(is_kymo)
+        # Show/hide waterfall-specific settings
+        self.waterfall_lines.setVisible(is_waterfall)
+        self.waterfall_lines_label.setVisible(is_waterfall)
 
-        # Hide video FPS for kymograph mode
-        self.video_fps.setVisible(not is_kymo)
-        self.video_fps_label.setVisible(not is_kymo)
+        # Hide video FPS for waterfall mode
+        self.video_fps.setVisible(not is_waterfall)
+        self.video_fps_label.setVisible(not is_waterfall)
 
         # Update frame limit label
-        if is_kymo:
+        if is_waterfall:
             self.limit_frames_enable.setText("Limit lines")
         else:
             self.limit_frames_enable.setText("Limit frames")
@@ -1051,7 +1031,7 @@ class SettingsWidget(QWidget):
         self.transform_changed.emit(
             self.flip_x_check.isChecked(),
             self.flip_y_check.isChecked(),
-            self.rotation_spin.value()
+            int(self.rotation_spin.currentText())
         )
 
     def apply_preset(self):
@@ -1161,7 +1141,7 @@ class SettingsWidget(QWidget):
             },
             'capture': {  # Renamed from 'output'
                 'mode': self.capture_mode.currentText(),
-                'kymo_lines': self.kymo_lines.value(),
+                'waterfall_lines': self.waterfall_lines.value(),
                 'path': self.output_path.text(),
                 'image_prefix': self.image_prefix.text(),
                 'video_prefix': self.video_prefix.text(),
@@ -1173,7 +1153,7 @@ class SettingsWidget(QWidget):
             'transform': {
                 'flip_x': self.flip_x_check.isChecked(),
                 'flip_y': self.flip_y_check.isChecked(),
-                'rotation': self.rotation_spin.value()
+                'rotation': int(self.rotation_spin.currentText())
             }
         }
 
@@ -1200,6 +1180,7 @@ class LogWidget(QWidget):
         self.level_combo = QComboBox()
         self.level_combo.addItems(['INFO', 'DEBUG'])
         self.level_combo.setCurrentText('INFO')
+        self.level_combo.setStyleSheet("color: white;")
 
         # Don't connect here - let app.py handle it
         header_layout.addWidget(QLabel("Level:"))

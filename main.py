@@ -11,7 +11,7 @@ from PyQt5.QtGui import QImage, QTransform
 from camera import Camera
 from gui import MainWindow
 from thread import CameraThread
-from worker import VideoWorker, KymographWorker
+from worker import VideoWorker, WaterfallWorker
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -31,7 +31,8 @@ class PylonApp:
         self.last_frame = None
         self.current_selection = None
         self.gui_handler = None
-        self.kymo_mode = False
+        self.waterfall_mode = False
+        self.saved_roi_height = None  # Store height when entering waterfall mode
 
         # FPS estimation variables
         self.fps_frame_count = 0
@@ -42,10 +43,10 @@ class PylonApp:
         self._setup_logging()
         self._update_camera_list()
 
-        # Status update timer for FPS
+        # Status update timer for FPS (faster updates for lower latency)
         self.fps_timer = QTimer()
         self.fps_timer.timeout.connect(self._update_fps)
-        self.fps_timer.start(500)
+        self.fps_timer.start(200)  # Update every 200ms instead of 500ms
 
         log.info("Application started")
 
@@ -110,17 +111,68 @@ class PylonApp:
         log.info(f"Log level changed to {level_text}")
 
     def _on_mode_changed(self, mode: str):
-        """Handle capture mode change"""
-        self.kymo_mode = (mode == 'Kymograph')
-        
+        """Handle capture mode change with ROI height management"""
+        entering_waterfall = (mode == 'Waterfall')
+
+        # Handle ROI height saving/restoring
+        if entering_waterfall and not self.waterfall_mode:
+            # Entering waterfall mode - save current height and set to 1
+            current_height = self.window.settings.roi_height.value()
+            if current_height > 1:  # Only save if not already 1
+                self.saved_roi_height = current_height
+                log.debug(f"Saved ROI height: {self.saved_roi_height}")
+
+            # Set height to 1 for waterfall mode
+            self.window.settings.roi_height.setValue(1)
+
+            # Apply the height change to camera if connected
+            if self.camera.device:
+                was_live = False
+                if self.thread and self.thread.isRunning():
+                    if not self.thread.recording:
+                        was_live = True
+                        self.stop_live()
+                        time.sleep(0.1)
+
+                self.camera.set_parameter('Height', 1)
+
+                if was_live:
+                    time.sleep(0.1)
+                    self.start_live()
+
+        elif not entering_waterfall and self.waterfall_mode:
+            # Leaving waterfall mode - restore saved height
+            if self.saved_roi_height is not None:
+                self.window.settings.roi_height.setValue(self.saved_roi_height)
+                log.debug(f"Restored ROI height: {self.saved_roi_height}")
+
+                # Apply the restored height to camera if connected
+                if self.camera.device:
+                    was_live = False
+                    if self.thread and self.thread.isRunning():
+                        if not self.thread.recording:
+                            was_live = True
+                            self.stop_live()
+                            time.sleep(0.1)
+
+                    self.camera.set_parameter('Height', self.saved_roi_height)
+
+                    if was_live:
+                        time.sleep(0.1)
+                        self.start_live()
+
+                self.saved_roi_height = None
+
+        self.waterfall_mode = entering_waterfall
+
         # Update preview widget
-        if self.kymo_mode:
+        if self.waterfall_mode:
             settings = self.window.settings.get_settings()
             width = settings['roi']['width']
-            lines = settings['capture']['kymo_lines']
-            self.window.preview.set_kymo_mode(True, width, lines)
+            lines = settings['capture']['waterfall_lines']
+            self.window.preview.set_waterfall_mode(True, width, lines)
         else:
-            self.window.preview.set_kymo_mode(False)
+            self.window.preview.set_waterfall_mode(False)
 
     def _on_transform_changed(self, flip_x: bool, flip_y: bool, rotation: int):
         """Handle transform settings change"""
@@ -165,18 +217,18 @@ class PylonApp:
         """Apply transform settings to frame for capture"""
         settings = self.window.settings.get_settings()
         transform = settings['transform']
-        
+
         if not transform['flip_x'] and not transform['flip_y'] and transform['rotation'] == 0:
             return frame
-        
+
         result = frame.copy()
-        
+
         # Apply flips
         if transform['flip_x']:
             result = np.fliplr(result)
         if transform['flip_y']:
             result = np.flipud(result)
-        
+
         # Apply rotation
         if transform['rotation'] != 0:
             angle = transform['rotation']
@@ -191,7 +243,7 @@ class PylonApp:
                 # Fallback to numpy rotation (90 degree increments only)
                 k = (angle % 360) // 90
                 result = np.rot90(result, k)
-        
+
         return result
 
     def start_live(self):
@@ -205,7 +257,7 @@ class PylonApp:
         self.fps_start_time = None
         self.estimated_fps = 0.0
 
-        self.thread = CameraThread(self.camera, kymo_mode=self.kymo_mode)
+        self.thread = CameraThread(self.camera, waterfall_mode=self.waterfall_mode)
         self.thread.frame_ready.connect(self._display_frame)
         self.thread.stats_update.connect(self._update_stats)
         self.thread.recording_stopped.connect(self._on_recording_stopped)
@@ -214,7 +266,7 @@ class PylonApp:
         self.thread.start()
 
         self.window.preview.btn_live.setText("Stop Live")
-        log.info("Live preview started" + (" (Kymograph mode)" if self.kymo_mode else ""))
+        log.info("Live preview started" + (" (Waterfall mode)" if self.waterfall_mode else ""))
 
     def stop_live(self):
         """Stop live preview"""
@@ -282,13 +334,13 @@ class PylonApp:
             if offset_x_info:
                 self.window.preview.offset_x_slider.setRange(
                     offset_x_info.get('min', 0),
-                    offset_x_info.get('max', 4096)
+                    4096
                 )
                 self.window.preview.offset_x_slider.setValue(offset_x_info.get('value', 0))
             if offset_y_info:
                 self.window.preview.offset_y_slider.setRange(
                     offset_y_info.get('min', 0),
-                    offset_y_info.get('max', 3072)
+                    3072
                 )
                 self.window.preview.offset_y_slider.setValue(offset_y_info.get('value', 0))
 
@@ -383,11 +435,11 @@ class PylonApp:
 
             # Update ROI display
             self.window.preview.update_status(roi=f" {settings['roi']['width']}x{settings['roi']['height']} ")
-            
-            # Update kymograph buffer if in kymo mode
-            if self.kymo_mode:
-                self.window.preview.set_kymo_mode(True, settings['roi']['width'], 
-                                                  settings['capture']['kymo_lines'])
+
+            # Update waterfall buffer if in waterfall mode
+            if self.waterfall_mode:
+                self.window.preview.set_waterfall_mode(True, settings['roi']['width'],
+                                                  settings['capture']['waterfall_lines'])
 
             log.info("Settings applied")
 
@@ -407,12 +459,12 @@ class PylonApp:
             self.start_live()
 
     def capture_frame(self):
-        """Capture single frame or kymograph with transforms applied"""
-        if self.kymo_mode:
-            # Capture from kymograph buffer
-            frame = self.window.preview.get_kymograph_buffer()
+        """Capture single frame or waterfall with transforms applied"""
+        if self.waterfall_mode:
+            # Capture from waterfall buffer
+            frame = self.window.preview.get_waterfall_buffer()
             if frame is None:
-                log.error("No kymograph buffer available")
+                log.error("No waterfall buffer available")
                 return
         else:
             # Normal frame capture
@@ -444,8 +496,8 @@ class PylonApp:
 
             # Generate filename with mandatory timestamp
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            if self.kymo_mode:
-                suffix += "_kymo"
+            if self.waterfall_mode:
+                suffix += "_waterfall"
             path = f"{base_path}/{img_prefix}{suffix}_{timestamp}.png"
             Path(path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -463,7 +515,7 @@ class PylonApp:
                 img = QImage(frame.data, w, h, w * 3, QImage.Format_RGB888)
 
             if img.save(path):
-                log.info(f"{'Kymograph' if self.kymo_mode else 'Frame'} captured: {path}")
+                log.info(f"{'Waterfall' if self.waterfall_mode else 'Frame'} captured: {path}")
                 if settings['transform']['flip_x'] or settings['transform']['flip_y'] or settings['transform']['rotation'] != 0:
                     log.info("(Transform applied to saved image)")
             else:
@@ -479,7 +531,7 @@ class PylonApp:
             self.start_recording()
 
     def start_recording(self):
-        """Start recording (frames or kymograph)"""
+        """Start recording (frames or waterfall)"""
         if not self.thread:
             log.error("Start live preview first")
             return
@@ -489,8 +541,8 @@ class PylonApp:
         # Configure preview
         if settings['capture']['preview_off']:
             self.thread.set_preview_enabled(False)
-            if self.kymo_mode:
-                self.window.preview.show_message("Recording Kymograph...\n(Preview disabled)")
+            if self.waterfall_mode:
+                self.window.preview.show_message("Recording Waterfall...\n(Preview disabled)")
             else:
                 self.window.preview.show_message("Recording...\n(Preview disabled)")
 
@@ -502,12 +554,12 @@ class PylonApp:
         w = self.camera.get_parameter('Width').get('value', 640)
         h = self.camera.get_parameter('Height').get('value', 480)
 
-        if self.kymo_mode:
-            # Create kymograph file
+        if self.waterfall_mode:
+            # Create waterfall file
             timestamp = time.strftime('%Y%m%d_%H%M%S')
-            kymo_path = base_path / f"{settings['capture']['video_prefix']}_{timestamp}.kmg"
-            
-            worker = KymographWorker(str(kymo_path), w)
+            waterfall_path = base_path / f"{settings['capture']['video_prefix']}_{timestamp}.wtf"
+
+            worker = WaterfallWorker(str(waterfall_path), w)
         else:
             # Create unique frames subdirectory for video
             timestamp = time.strftime('%Y%m%d_%H%M%S_%f')[:-3]
@@ -521,8 +573,8 @@ class PylonApp:
 
         if self.thread.start_recording(worker, max_frames, max_time):
             self.window.preview.btn_record.setText("Stop Recording")
-            if self.kymo_mode:
-                log.info(f"Kymograph recording started: {worker.output_path if hasattr(worker, 'output_path') else 'kymograph'}")
+            if self.waterfall_mode:
+                log.info(f"Waterfall recording started: {worker.output_path if hasattr(worker, 'output_path') else 'waterfall'}")
             else:
                 log.info(f"Recording started: {frames_dir}")
         else:
@@ -537,8 +589,8 @@ class PylonApp:
             # Re-enable preview
             self.thread.set_preview_enabled(True)
 
-            if self.kymo_mode:
-                log.info(f"Kymograph recording stopped: {frames} lines")
+            if self.waterfall_mode:
+                log.info(f"Waterfall recording stopped: {frames} lines")
             else:
                 log.info(f"Recording stopped: {frames} frames")
 

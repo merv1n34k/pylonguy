@@ -35,7 +35,7 @@ Installing [pylon](https://www.baslerweb.com/pylon) might be required. See [know
 
 ```bash
 # To run the app
-python app.py
+python main.py
 ```
 
 The application separates capture from video encoding for maximum performance:

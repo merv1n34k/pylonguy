@@ -1,5 +1,4 @@
-
-"""Worker module - frame and kymograph writer with post-processing"""
+"""Worker module - frame and waterfall writer with post-processing"""
 import subprocess
 import numpy as np
 from pathlib import Path
@@ -157,8 +156,8 @@ class VideoWorker:
             return ""
 
 
-class KymographWorker:
-    """Kymograph writer that saves lines to .kmg file with embedded header"""
+class WaterfallWorker:
+    """Waterfall writer that saves lines to .wtf file with embedded header"""
 
     def __init__(self, output_path: str, width: int, buffer_size: int = 1000):
         self.output_path = Path(output_path)
@@ -172,7 +171,7 @@ class KymographWorker:
         self.active = False
 
     def start(self) -> bool:
-        """Start kymograph writer"""
+        """Start waterfall writer"""
         try:
             # Create output directory
             self.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -180,22 +179,22 @@ class KymographWorker:
             # Open file in write binary mode
             self.file = open(self.output_path, 'wb')
 
-            # Write header: magic bytes "KMG1" + width (2 bytes, little-endian)
-            header = b'KMG1' + self.width.to_bytes(2, 'little')
+            # Write header: magic bytes "WTF1" + width (2 bytes, little-endian)
+            header = b'WTF1' + self.width.to_bytes(2, 'little')
             self.file.write(header)
 
             self.active = True
             self.line_count = 0
 
-            log.info(f"Kymograph writer started: {self.output_path}")
+            log.info(f"Waterfall writer started: {self.output_path}")
             return True
 
         except Exception as e:
-            log.error(f"Failed to start kymograph writer: {e}")
+            log.error(f"Failed to start waterfall writer: {e}")
             return False
 
     def write(self, frame: np.ndarray) -> bool:
-        """Add frame (will be collapsed to line) to kymograph"""
+        """Add frame (will be collapsed to line) to waterfall"""
         if not self.active or self.file is None:
             return False
 
@@ -219,7 +218,7 @@ class KymographWorker:
             return True
 
         except Exception as e:
-            log.debug(f"Kymograph write error: {e}")
+            log.debug(f"Waterfall write error: {e}")
             return False
 
     def _flush_buffer(self):
@@ -233,11 +232,11 @@ class KymographWorker:
             self.file.write(block.tobytes())
             self.file.flush()  # Ensure data is written
 
-            log.debug(f"Flushed {len(self.buffer)} lines to kymograph")
+            log.debug(f"Flushed {len(self.buffer)} lines to waterfall")
             self.buffer = []
 
         except Exception as e:
-            log.error(f"Failed to flush kymograph buffer: {e}")
+            log.error(f"Failed to flush waterfall buffer: {e}")
 
     def stop(self) -> str:
         """Stop writing and close file"""
@@ -252,6 +251,6 @@ class KymographWorker:
             self.file.close()
             self.file = None
 
-        log.info(f"Kymograph saved: {self.output_path} ({self.line_count} lines, width={self.width})")
+        log.info(f"Waterfall saved: {self.output_path} ({self.line_count} lines, width={self.width})")
 
         return str(self.output_path)

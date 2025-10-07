@@ -1,0 +1,13 @@
+[project]
+name = "pylonguy"
+version = "1.2.0"
+description = "PyQt5 app for GenIcam/Basler camera control, tailored for high-speed cameras with support for linescans."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.3.3",
+    "pillow>=11.3.0",
+    "pypylon>=4.2.0",
+    "pyqt5>=5.15.11",
+]
