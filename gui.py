@@ -1,4 +1,5 @@
 """GUI module - user interface elements"""
+
 from PyQt5.QtCore import Qt, pyqtSignal, QRect, QPoint
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QPen, QTransform
 from PyQt5.QtWidgets import *
@@ -6,15 +7,17 @@ import numpy as np
 import logging
 import json
 import time
+import math
 from pathlib import Path
 
 log = logging.getLogger("pylonguy")
+
 
 class PreviewWidget(QWidget):
     """Camera preview with status display and selection tool"""
 
     # Signals
-    selection_changed = pyqtSignal(object) # Emits QRect or None
+    selection_changed = pyqtSignal(object)  # Emits QRect or None
     offset_x_changed = pyqtSignal(int)
     offset_y_changed = pyqtSignal(int)
 
@@ -37,6 +40,16 @@ class PreviewWidget(QWidget):
         self.flip_x = False
         self.flip_y = False
         self.rotation = 0
+
+        # Ruler settings
+        self.ruler_v = False
+        self.ruler_h = False
+        self.ruler_radial = False
+
+        # Deshear settings
+        self.deshear_enabled = False
+        self.deshear_angle = 0
+        self.deshear_px_um = 3.8
 
         self.init_ui()
 
@@ -75,9 +88,13 @@ class PreviewWidget(QWidget):
         fps_layout.setContentsMargins(0, 0, 0, 0)
         fps_layout.setSpacing(0)
         fps_label = QLabel(" FPS ")
-        fps_label.setStyleSheet("background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;")
+        fps_label.setStyleSheet(
+            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+        )
         self.fps_value = QLabel(" 0.0 ")
-        self.fps_value.setStyleSheet("background: #222; color: #0f0; padding: 5px 10px;")
+        self.fps_value.setStyleSheet(
+            "background: #222; color: #0f0; padding: 5px 10px;"
+        )
         fps_layout.addWidget(fps_label)
         fps_layout.addWidget(self.fps_value, 1)
         fps_widget.setLayout(fps_layout)
@@ -88,9 +105,13 @@ class PreviewWidget(QWidget):
         rec_layout.setContentsMargins(0, 0, 0, 0)
         rec_layout.setSpacing(0)
         rec_label = QLabel(" REC ")
-        rec_label.setStyleSheet("background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;")
+        rec_label.setStyleSheet(
+            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+        )
         self.rec_status = QLabel(" OFF ")
-        self.rec_status.setStyleSheet("background: #222; color: #0f0; padding: 5px 10px;")
+        self.rec_status.setStyleSheet(
+            "background: #222; color: #0f0; padding: 5px 10px;"
+        )
         rec_layout.addWidget(rec_label)
         rec_layout.addWidget(self.rec_status, 1)
         rec_widget.setLayout(rec_layout)
@@ -101,9 +122,13 @@ class PreviewWidget(QWidget):
         frames_layout.setContentsMargins(0, 0, 0, 0)
         frames_layout.setSpacing(0)
         self.frames_label = QLabel(" FRAMES ")  # Will change to LINES in waterfall mode
-        self.frames_label.setStyleSheet("background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;")
+        self.frames_label.setStyleSheet(
+            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+        )
         self.rec_frames = QLabel(" 0 ")
-        self.rec_frames.setStyleSheet("background: #222; color: #0f0; padding: 5px 10px;")
+        self.rec_frames.setStyleSheet(
+            "background: #222; color: #0f0; padding: 5px 10px;"
+        )
         frames_layout.addWidget(self.frames_label)
         frames_layout.addWidget(self.rec_frames, 1)
         frames_widget.setLayout(frames_layout)
@@ -114,7 +139,9 @@ class PreviewWidget(QWidget):
         time_layout.setContentsMargins(0, 0, 0, 0)
         time_layout.setSpacing(0)
         time_label = QLabel(" TIME ")
-        time_label.setStyleSheet("background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;")
+        time_label.setStyleSheet(
+            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+        )
         self.rec_time = QLabel(" 0.0s ")
         self.rec_time.setStyleSheet("background: #222; color: #0f0; padding: 5px 10px;")
         time_layout.addWidget(time_label)
@@ -127,9 +154,13 @@ class PreviewWidget(QWidget):
         roi_layout.setContentsMargins(0, 0, 0, 0)
         roi_layout.setSpacing(0)
         roi_label = QLabel(" ROI ")
-        roi_label.setStyleSheet("background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;")
+        roi_label.setStyleSheet(
+            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+        )
         self.roi_value = QLabel(" --- ")
-        self.roi_value.setStyleSheet("background: #222; color: #0f0; padding: 5px 10px;")
+        self.roi_value.setStyleSheet(
+            "background: #222; color: #0f0; padding: 5px 10px;"
+        )
         roi_layout.addWidget(roi_label)
         roi_layout.addWidget(self.roi_value, 1)
         roi_widget.setLayout(roi_layout)
@@ -140,9 +171,13 @@ class PreviewWidget(QWidget):
         sel_layout.setContentsMargins(0, 0, 0, 0)
         sel_layout.setSpacing(0)
         sel_label = QLabel(" SEL ")
-        sel_label.setStyleSheet("background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;")
+        sel_label.setStyleSheet(
+            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+        )
         self.sel_value = QLabel(" None ")
-        self.sel_value.setStyleSheet("background: #222; color: #0f0; padding: 5px 10px;")
+        self.sel_value.setStyleSheet(
+            "background: #222; color: #0f0; padding: 5px 10px;"
+        )
         sel_layout.addWidget(sel_label)
         sel_layout.addWidget(self.sel_value, 1)
         sel_widget.setLayout(sel_layout)
@@ -273,8 +308,12 @@ class PreviewWidget(QWidget):
         layout.addWidget(slider_widget, 5)
 
         # Connect slider signals
-        self.offset_x_slider.valueChanged.connect(lambda v: self.offset_x_value.setText(str(v)))
-        self.offset_y_slider.valueChanged.connect(lambda v: self.offset_y_value.setText(str(v)))
+        self.offset_x_slider.valueChanged.connect(
+            lambda v: self.offset_x_value.setText(str(v))
+        )
+        self.offset_y_slider.valueChanged.connect(
+            lambda v: self.offset_y_value.setText(str(v))
+        )
 
         # Connect to signals:
         self.offset_x_slider.valueChanged.connect(self.offset_x_changed.emit)
@@ -307,6 +346,22 @@ class PreviewWidget(QWidget):
         if self.current_pixmap:
             self._update_display()
 
+    def set_rulers(self, v: bool, h: bool, radial: bool):
+        """Set ruler display modes"""
+        self.ruler_v = v
+        self.ruler_h = h
+        self.ruler_radial = radial
+        if self.current_pixmap or self.waterfall_mode:
+            self._update_display()
+
+    def set_deshear(self, enabled: bool, angle: float, px_um: float):
+        """Set deshear parameters"""
+        self.deshear_enabled = enabled
+        self.deshear_angle = angle
+        self.deshear_px_um = px_um
+        if self.waterfall_mode:
+            self._update_display()
+
     def resizeEvent(self, event):
         """Handle resize to update preview scaling"""
         super().resizeEvent(event)
@@ -315,24 +370,28 @@ class PreviewWidget(QWidget):
 
     def update_status(self, **kwargs):
         """Update status bar values"""
-        if 'fps' in kwargs:
+        if "fps" in kwargs:
             self.fps_value.setText(f" {kwargs['fps']:.1f} ")
 
-        if 'recording' in kwargs:
-            if kwargs['recording']:
+        if "recording" in kwargs:
+            if kwargs["recording"]:
                 self.rec_status.setText(" ON ")
-                self.rec_status.setStyleSheet("background: #222; color: #f00; padding: 5px 10px;")
+                self.rec_status.setStyleSheet(
+                    "background: #222; color: #f00; padding: 5px 10px;"
+                )
             else:
                 self.rec_status.setText(" OFF ")
-                self.rec_status.setStyleSheet("background: #222; color: #0f0; padding: 5px 10px;")
+                self.rec_status.setStyleSheet(
+                    "background: #222; color: #0f0; padding: 5px 10px;"
+                )
 
-        if 'frames' in kwargs:
+        if "frames" in kwargs:
             self.rec_frames.setText(f" {kwargs['frames']} ")
 
-        if 'elapsed' in kwargs:
+        if "elapsed" in kwargs:
             self.rec_time.setText(f" {kwargs['elapsed']:.1f}s ")
 
-        if 'roi' in kwargs:
+        if "roi" in kwargs:
             self.roi_value.setText(f" {kwargs['roi']} ")
 
     def show_frame(self, frame: np.ndarray):
@@ -344,19 +403,36 @@ class PreviewWidget(QWidget):
         self.original_frame_size = (w, h)
 
         if self.waterfall_mode and self.waterfall_buffer is not None:
-            # In waterfall mode, collapse frame to 1×W profile
+            # Collapse frame to profile
             profile = np.median(frame, axis=0).astype(np.uint8)
+
+            # Apply deshear if enabled
+            if self.deshear_enabled and self.deshear_angle > 0:
+                from deshear_util import shift_row_linear
+                import math
+
+                # Assuming 1µm/line step size for simplicity
+                dy_um = 1.0
+                tan_theta = math.tan(math.radians(self.deshear_angle))
+                shift_px = self.waterfall_row * tan_theta * dy_um / self.deshear_px_um
+                profile = shift_row_linear(profile, shift_px)
 
             # Check if buffer width matches frame width
             if self.waterfall_buffer.shape[1] != len(profile):
                 # Reinitialize buffer with correct width
                 lines = self.waterfall_buffer.shape[0]
-                log.debug(f"Resizing waterfall buffer from {self.waterfall_buffer.shape[1]} to {len(profile)} width")
-                self.waterfall_buffer = np.full((lines, len(profile)), 255, dtype=np.uint8)
+                log.debug(
+                    f"Resizing waterfall buffer from {self.waterfall_buffer.shape[1]} to {len(profile)} width"
+                )
+                self.waterfall_buffer = np.full(
+                    (lines, len(profile)), 255, dtype=np.uint8
+                )
                 self.waterfall_row = 0
 
             self.waterfall_buffer[self.waterfall_row, :] = profile
-            self.waterfall_row = (self.waterfall_row + 1) % self.waterfall_buffer.shape[0]
+            self.waterfall_row = (self.waterfall_row + 1) % self.waterfall_buffer.shape[
+                0
+            ]
             self._update_display()
         else:
             # Normal ROI mode
@@ -364,11 +440,11 @@ class PreviewWidget(QWidget):
                 frame = (frame >> 8).astype(np.uint8)
 
             if len(frame.shape) == 2:
-                if not frame.flags['C_CONTIGUOUS']:
+                if not frame.flags["C_CONTIGUOUS"]:
                     frame = np.ascontiguousarray(frame)
                 img = QImage(frame.data, w, h, w, QImage.Format_Grayscale8)
             else:
-                if not frame.flags['C_CONTIGUOUS']:
+                if not frame.flags["C_CONTIGUOUS"]:
                     frame = np.ascontiguousarray(frame)
                 img = QImage(frame.data, w, h, w * 3, QImage.Format_RGB888)
 
@@ -380,7 +456,7 @@ class PreviewWidget(QWidget):
             self.current_pixmap = pixmap.scaled(
                 self.display.size(),
                 Qt.KeepAspectRatio,
-                Qt.FastTransformation  # Use fast scaling for lower latency
+                Qt.FastTransformation,  # Use fast scaling for lower latency
             )
 
             self.image_rect = self._calculate_image_rect()
@@ -457,21 +533,31 @@ class PreviewWidget(QWidget):
                 if self.waterfall_row == 0:
                     view = self.waterfall_buffer
                 else:
-                    view = np.vstack([self.waterfall_buffer[self.waterfall_row:, :],
-                                      self.waterfall_buffer[:self.waterfall_row, :]])
+                    view = np.vstack(
+                        [
+                            self.waterfall_buffer[self.waterfall_row :, :],
+                            self.waterfall_buffer[: self.waterfall_row, :],
+                        ]
+                    )
             else:
                 # Buffer larger - only process what we'll show
                 if self.waterfall_row == 0:
                     view = self.waterfall_buffer[-max_display_lines:, :]
                 else:
                     # Get the most recent lines only
-                    lines_to_show = min(max_display_lines, self.waterfall_buffer.shape[0])
+                    lines_to_show = min(
+                        max_display_lines, self.waterfall_buffer.shape[0]
+                    )
                     if self.waterfall_row >= lines_to_show:
-                        view = self.waterfall_buffer[self.waterfall_row-lines_to_show:self.waterfall_row, :]
+                        view = self.waterfall_buffer[
+                            self.waterfall_row - lines_to_show : self.waterfall_row, :
+                        ]
                     else:
                         # Wrap around
-                        part1 = self.waterfall_buffer[self.waterfall_row-lines_to_show:, :]
-                        part2 = self.waterfall_buffer[:self.waterfall_row, :]
+                        part1 = self.waterfall_buffer[
+                            self.waterfall_row - lines_to_show :, :
+                        ]
+                        part2 = self.waterfall_buffer[: self.waterfall_row, :]
                         view = np.vstack([part1, part2])
 
             h, w = view.shape
@@ -485,7 +571,7 @@ class PreviewWidget(QWidget):
             scaled = pixmap.scaled(
                 self.display.size(),
                 Qt.KeepAspectRatio,
-                Qt.FastTransformation  # Use fast scaling for lower latency
+                Qt.FastTransformation,  # Use fast scaling for lower latency
             )
 
             self.image_rect = self._calculate_image_rect()
@@ -500,7 +586,9 @@ class PreviewWidget(QWidget):
                 painter.drawPixmap(self.image_rect, transformed)
 
         # Draw selection overlay (works for both modes)
-        if self.selection_rect or (self.selecting and self.select_start and self.mouse_pos):
+        if self.selection_rect or (
+            self.selecting and self.select_start and self.mouse_pos
+        ):
             pen = QPen(QColor(0, 180, 255), 2, Qt.DashLine)
             pen.setDashPattern([5, 3])
             painter.setPen(pen)
@@ -515,6 +603,89 @@ class PreviewWidget(QWidget):
                 temp_rect = QRect(self.select_start, self.mouse_pos).normalized()
                 painter.drawRect(temp_rect)
 
+        # Draw rulers
+        if (self.ruler_v or self.ruler_h or self.ruler_radial) and self.image_rect:
+            painter.setPen(
+                QPen(QColor(255, 255, 0, 180), 1, Qt.SolidLine)
+            )  # Yellow lines
+
+            cx = self.image_rect.center().x()
+            cy = self.image_rect.center().y()
+
+            if self.ruler_v:
+                # Vertical lines - grid pattern every 1/10 of width
+                step = self.image_rect.width() // 10
+                for x in range(
+                    self.image_rect.left(), self.image_rect.right() + 1, step
+                ):
+                    painter.drawLine(
+                        x, self.image_rect.top(), x, self.image_rect.bottom()
+                    )
+
+            if self.ruler_h:
+                # Horizontal lines - grid pattern every 1/10 of height
+                step = self.image_rect.height() // 10
+                for y in range(
+                    self.image_rect.top(), self.image_rect.bottom() + 1, step
+                ):
+                    painter.drawLine(
+                        self.image_rect.left(), y, self.image_rect.right(), y
+                    )
+
+            if self.ruler_radial:
+                # Draw radial lines extending to rectangle edges
+                for angle in range(0, 360, 30):
+                    radian = math.radians(angle)
+
+                    # Calculate line endpoint at rectangle edge
+                    dx = math.cos(radian)
+                    dy = -math.sin(radian)  # Negative because y increases downward
+
+                    # Find intersection with rectangle edges
+                    if abs(dx) > 0.001:  # Not vertical
+                        t_right = (self.image_rect.right() - cx) / dx
+                        t_left = (self.image_rect.left() - cx) / dx
+                    else:
+                        t_right = t_left = float("inf")
+
+                    if abs(dy) > 0.001:  # Not horizontal
+                        t_bottom = (self.image_rect.bottom() - cy) / dy
+                        t_top = (self.image_rect.top() - cy) / dy
+                    else:
+                        t_bottom = t_top = float("inf")
+
+                    # Find the positive t value that gives us the edge intersection
+                    t = min(t for t in [t_right, t_left, t_bottom, t_top] if t > 0)
+
+                    x_end = cx + t * dx
+                    y_end = cy + t * dy
+                    painter.drawLine(cx, cy, int(x_end), int(y_end))
+
+                    # Draw angle labels at 60% of the way to edge
+                    label_t = t * 0.6
+                    x_label = cx + label_t * dx
+                    y_label = cy + label_t * dy
+
+                    label_text = f"{angle}°"
+                    painter.setPen(QPen(QColor(0, 0, 0), 2))  # Black outline
+                    painter.drawText(
+                        int(x_label - 15),
+                        int(y_label - 5),
+                        30,
+                        10,
+                        Qt.AlignCenter,
+                        label_text,
+                    )
+                    painter.setPen(QPen(QColor(255, 255, 0), 1))  # Yellow text
+                    painter.drawText(
+                        int(x_label - 14),
+                        int(y_label - 6),
+                        28,
+                        10,
+                        Qt.AlignCenter,
+                        label_text,
+                    )
+
         # Add transform indicator if any transforms are active
         if self.flip_x or self.flip_y or self.rotation != 0:
             transform_text = []
@@ -528,6 +699,10 @@ class PreviewWidget(QWidget):
             painter.setPen(QColor(255, 255, 0))
             painter.drawText(10, 20, " ".join(transform_text) + " (preview only)")
 
+        if self.deshear_enabled and self.waterfall_mode:
+            painter.setPen(QColor(255, 255, 0))
+            painter.drawText(10, 40, f"DESHEAR {self.deshear_angle:.1f}°")
+
         painter.end()
         self.display.setPixmap(display_pixmap)
 
@@ -538,8 +713,12 @@ class PreviewWidget(QWidget):
                 return self.waterfall_buffer.copy()
             else:
                 # Return buffer with most recent line at bottom
-                return np.vstack([self.waterfall_buffer[self.waterfall_row:, :],
-                                  self.waterfall_buffer[:self.waterfall_row, :]])
+                return np.vstack(
+                    [
+                        self.waterfall_buffer[self.waterfall_row :, :],
+                        self.waterfall_buffer[: self.waterfall_row, :],
+                    ]
+                )
 
     def eventFilter(self, obj, event):
         """Handle mouse events for selection"""
@@ -560,12 +739,24 @@ class PreviewWidget(QWidget):
         elif event.type() == event.MouseButtonRelease:
             if event.button() == Qt.LeftButton and self.selecting:
                 self.selecting = False
-                if self.select_start and self.mouse_pos and self.select_start != self.mouse_pos:
-                    self.selection_rect = QRect(self.select_start, self.mouse_pos).normalized()
+                if (
+                    self.select_start
+                    and self.mouse_pos
+                    and self.select_start != self.mouse_pos
+                ):
+                    self.selection_rect = QRect(
+                        self.select_start, self.mouse_pos
+                    ).normalized()
                     # Simple boundary check using display size
-                    display_rect = QRect(0, 0, self.display.width(), self.display.height())
+                    display_rect = QRect(
+                        0, 0, self.display.width(), self.display.height()
+                    )
                     self.selection_rect = self.selection_rect.intersected(display_rect)
-                    if self.selection_rect.isValid() and self.selection_rect.width() > 5 and self.selection_rect.height() > 5:
+                    if (
+                        self.selection_rect.isValid()
+                        and self.selection_rect.width() > 5
+                        and self.selection_rect.height() > 5
+                    ):
                         pixel_rect = self._map_to_frame_coords(self.selection_rect)
                         self.selection_changed.emit(pixel_rect)
                     else:
@@ -633,12 +824,14 @@ class PreviewWidget(QWidget):
         self.original_frame_size = None
         self.clear_selection()
 
+
 class SettingsWidget(QWidget):
     """Settings panel with all controls"""
 
     settings_changed = pyqtSignal()
     mode_changed = pyqtSignal(str)  # New signal for mode changes
     transform_changed = pyqtSignal(bool, bool, int)  # flip_x, flip_y, rotation
+    ruler_changed = pyqtSignal(bool, bool, bool)  # ruler v, h, radial
 
     def __init__(self):
         super().__init__()
@@ -653,51 +846,51 @@ class SettingsWidget(QWidget):
 
         # Default presets
         default_presets = {
-            'Quality': {
-                'Width': 1920,
-                'Height': 1080,
-                'BinningHorizontal': '1',
-                'BinningVertical': '1',
-                'ExposureTime': 1000,
-                'Gain': 0,
-                'PixelFormat': 'Mono10p',
-                'SensorReadoutMode': 'Normal'
+            "Quality": {
+                "Width": 1920,
+                "Height": 1080,
+                "BinningHorizontal": "1",
+                "BinningVertical": "1",
+                "ExposureTime": 1000,
+                "Gain": 0,
+                "PixelFormat": "Mono10p",
+                "SensorReadoutMode": "Normal",
             },
-            'Speed': {
-                'Width': 320,
-                'Height': 240,
-                'BinningHorizontal': '1',
-                'BinningVertical': '1',
-                'ExposureTime': 100,
-                'Gain': 0,
-                'PixelFormat': 'Mono8',
-                'SensorReadoutMode': 'Fast'
+            "Speed": {
+                "Width": 320,
+                "Height": 240,
+                "BinningHorizontal": "1",
+                "BinningVertical": "1",
+                "ExposureTime": 100,
+                "Gain": 0,
+                "PixelFormat": "Mono8",
+                "SensorReadoutMode": "Fast",
             },
-            'Balanced': {
-                'Width': 640,
-                'Height': 480,
-                'BinningHorizontal': '1',
-                'BinningVertical': '1',
-                'ExposureTime': 500,
-                'Gain': 0,
-                'PixelFormat': 'Mono8',
-                'SensorReadoutMode': 'Normal'
+            "Balanced": {
+                "Width": 640,
+                "Height": 480,
+                "BinningHorizontal": "1",
+                "BinningVertical": "1",
+                "ExposureTime": 500,
+                "Gain": 0,
+                "PixelFormat": "Mono8",
+                "SensorReadoutMode": "Normal",
             },
-            'waterfall': {
-                'Width': 128,
-                'Height': 8,
-                'BinningHorizontal': '1',
-                'BinningVertical': '1',
-                'ExposureTime': 10,
-                'Gain': 0,
-                'PixelFormat': 'Mono8',
-                'SensorReadoutMode': 'Fast'
-            }
+            "waterfall": {
+                "Width": 128,
+                "Height": 8,
+                "BinningHorizontal": "1",
+                "BinningVertical": "1",
+                "ExposureTime": 10,
+                "Gain": 0,
+                "PixelFormat": "Mono8",
+                "SensorReadoutMode": "Fast",
+            },
         }
 
         if preset_file.exists():
             try:
-                with open(preset_file, 'r') as f:
+                with open(preset_file, "r") as f:
                     self.presets = json.load(f)
                     log.info("Loaded presets from file")
             except Exception as e:
@@ -713,7 +906,7 @@ class SettingsWidget(QWidget):
     def _save_presets_to_file(self):
         """Save all presets to JSON file"""
         try:
-            with open("presets.json", 'w') as f:
+            with open("presets.json", "w") as f:
                 json.dump(self.presets, f, indent=2)
             log.debug("Saved presets to file")
         except Exception as e:
@@ -728,16 +921,16 @@ class SettingsWidget(QWidget):
 
         # Get current values from widgets
         preset = {
-            'Width': self.roi_width.value(),
-            'Height': self.roi_height.value(),
-            'OffsetX': self.roi_offset_x.value(),
-            'OffsetY': self.roi_offset_y.value(),
-            'BinningHorizontal': self.binning_horizontal.currentText(),
-            'BinningVertical': self.binning_vertical.currentText(),
-            'ExposureTime': self.exposure.value(),
-            'Gain': self.gain.value(),
-            'PixelFormat': self.pixel_format.currentText(),
-            'SensorReadoutMode': self.sensor_mode.currentText()
+            "Width": self.roi_width.value(),
+            "Height": self.roi_height.value(),
+            "OffsetX": self.roi_offset_x.value(),
+            "OffsetY": self.roi_offset_y.value(),
+            "BinningHorizontal": self.binning_horizontal.currentText(),
+            "BinningVertical": self.binning_vertical.currentText(),
+            "ExposureTime": self.exposure.value(),
+            "Gain": self.gain.value(),
+            "PixelFormat": self.pixel_format.currentText(),
+            "SensorReadoutMode": self.sensor_mode.currentText(),
         }
 
         # Save to presets dict
@@ -750,7 +943,9 @@ class SettingsWidget(QWidget):
         if self.preset_combo.findText(preset_name) < 0:
             self.preset_combo.addItem(preset_name)
             # Re-sort items
-            items = [self.preset_combo.itemText(i) for i in range(self.preset_combo.count())]
+            items = [
+                self.preset_combo.itemText(i) for i in range(self.preset_combo.count())
+            ]
             items.sort()
             self.preset_combo.clear()
             self.preset_combo.addItems(items)
@@ -774,11 +969,12 @@ class SettingsWidget(QWidget):
 
         # First row: Camera selection and load defaults checkbox
         select_layout = QHBoxLayout()
-        select_layout.addWidget(QLabel("Camera:"))
         self.camera_combo = QComboBox()
         self.camera_combo.addItem("Detecting...")
         select_layout.addWidget(self.camera_combo, 1)
-        self.load_defaults_check = QCheckBox("Load Defaults")
+        self.btn_refresh = QPushButton("Refresh")
+        select_layout.addWidget(self.btn_refresh)
+        self.load_defaults_check = QCheckBox("Defaults")
         self.load_defaults_check.setChecked(True)
         select_layout.addWidget(self.load_defaults_check)
 
@@ -840,10 +1036,10 @@ class SettingsWidget(QWidget):
         self.roi_offset_y.setRange(0, 3072)
 
         self.binning_horizontal = QComboBox()
-        self.binning_horizontal.addItems(['1', '2', '3', '4'])
+        self.binning_horizontal.addItems(["1", "2", "3", "4"])
 
         self.binning_vertical = QComboBox()
-        self.binning_vertical.addItems(['1', '2', '3', '4'])
+        self.binning_vertical.addItems(["1", "2", "3", "4"])
 
         roi_layout.addRow("Width:", self.roi_width)
         roi_layout.addRow("Height:", self.roi_height)
@@ -851,6 +1047,21 @@ class SettingsWidget(QWidget):
         roi_layout.addRow("Offset Y:", self.roi_offset_y)
         roi_layout.addRow("Binning H:", self.binning_horizontal)
         roi_layout.addRow("Binning V:", self.binning_vertical)
+
+        ruler_layout = QHBoxLayout()
+        ruler_layout.addWidget(QLabel("Rulers:"))
+        self.ruler_v_check = QCheckBox("V")
+        self.ruler_h_check = QCheckBox("H")
+        self.ruler_radial_check = QCheckBox("Radial")
+        self.ruler_v_check.toggled.connect(self._on_ruler_changed)
+        self.ruler_h_check.toggled.connect(self._on_ruler_changed)
+        self.ruler_radial_check.toggled.connect(self._on_ruler_changed)
+        ruler_layout.addWidget(self.ruler_v_check)
+        ruler_layout.addWidget(self.ruler_h_check)
+        ruler_layout.addWidget(self.ruler_radial_check)
+        ruler_layout.addStretch()
+
+        roi_layout.addRow("Rulers:", ruler_layout)
 
         # Add transform controls
         transform_layout = QHBoxLayout()
@@ -861,7 +1072,7 @@ class SettingsWidget(QWidget):
         transform_layout.addWidget(self.flip_y_check)
         transform_layout.addWidget(QLabel("Rotate:"))
         self.rotation_spin = QComboBox()
-        self.rotation_spin.addItems(['0', '90', '180', '270'])
+        self.rotation_spin.addItems(["0", "90", "180", "270"])
         transform_layout.addWidget(self.rotation_spin)
         transform_layout.addStretch()
 
@@ -889,10 +1100,10 @@ class SettingsWidget(QWidget):
         self.gain.setValue(0)
 
         self.pixel_format = QComboBox()
-        self.pixel_format.addItems(['Mono8', 'Mono10', 'Mono10p'])
+        self.pixel_format.addItems(["Mono8", "Mono10", "Mono10p"])
 
         self.sensor_mode = QComboBox()
-        self.sensor_mode.addItems(['Normal', 'Fast'])
+        self.sensor_mode.addItems(["Normal", "Fast"])
 
         acq_layout.addRow("Exposure:", self.exposure)
         acq_layout.addRow("Gain:", self.gain)
@@ -936,7 +1147,7 @@ class SettingsWidget(QWidget):
 
         # Mode selection
         self.capture_mode = QComboBox()
-        self.capture_mode.addItems(['ROI Capture', 'Waterfall'])
+        self.capture_mode.addItems(["ROI Capture", "Waterfall"])
         self.capture_mode.currentTextChanged.connect(self._on_mode_changed)
         capture_layout.addRow("Mode:", self.capture_mode)
 
@@ -948,6 +1159,36 @@ class SettingsWidget(QWidget):
         capture_layout.addRow(self.waterfall_lines_label, self.waterfall_lines)
         self.waterfall_lines.setVisible(False)
         self.waterfall_lines_label.setVisible(False)
+
+        self.deshear_enable = QCheckBox("Apply Deshear")
+        self.deshear_enable.setVisible(False)
+        capture_layout.addRow("", self.deshear_enable)
+
+        deshear_params_layout = QHBoxLayout()
+        self.deshear_angle = QDoubleSpinBox()
+        self.deshear_angle.setRange(0, 90)
+        self.deshear_angle.setValue(0)
+        self.deshear_angle.setSuffix("°")
+
+        self.deshear_px_um = QDoubleSpinBox()
+        self.deshear_px_um.setRange(0.1, 100)
+        self.deshear_px_um.setValue(3.8)
+        self.deshear_px_um.setSuffix(" µm/px")
+        self.deshear_px_um.setDecimals(2)
+
+        deshear_params_layout.addWidget(QLabel("Angle:"))
+        deshear_params_layout.addWidget(self.deshear_angle)
+        deshear_params_layout.addWidget(QLabel("Scale:"))
+        deshear_params_layout.addWidget(self.deshear_px_um)
+        deshear_params_layout.addStretch()
+
+        self.deshear_params_widget = QWidget()
+        self.deshear_params_widget.setLayout(deshear_params_layout)
+        self.deshear_params_widget.setVisible(False)
+        capture_layout.addRow("", self.deshear_params_widget)
+
+        # Connect deshear enable to show/hide params
+        self.deshear_enable.toggled.connect(self.deshear_params_widget.setVisible)
 
         self.output_path = QLineEdit("./output")
         self.image_prefix = QLineEdit("img")
@@ -1007,11 +1248,17 @@ class SettingsWidget(QWidget):
 
     def _on_mode_changed(self, mode: str):
         """Handle capture mode change"""
-        is_waterfall = mode == 'Waterfall'
+        is_waterfall = mode == "Waterfall"
 
         # Show/hide waterfall-specific settings
         self.waterfall_lines.setVisible(is_waterfall)
         self.waterfall_lines_label.setVisible(is_waterfall)
+
+        self.deshear_enable.setVisible(is_waterfall)
+        if not is_waterfall:
+            self.deshear_params_widget.setVisible(False)
+        else:
+            self.deshear_params_widget.setVisible(self.deshear_enable.isChecked())
 
         # Hide video FPS for waterfall mode
         self.video_fps.setVisible(not is_waterfall)
@@ -1031,7 +1278,15 @@ class SettingsWidget(QWidget):
         self.transform_changed.emit(
             self.flip_x_check.isChecked(),
             self.flip_y_check.isChecked(),
-            int(self.rotation_spin.currentText())
+            int(self.rotation_spin.currentText()),
+        )
+
+    def _on_ruler_changed(self):
+        """Handle ruler checkbox changes"""
+        self.ruler_changed.emit(
+            self.ruler_v_check.isChecked(),
+            self.ruler_h_check.isChecked(),
+            self.ruler_radial_check.isChecked(),
         )
 
     def apply_preset(self):
@@ -1044,16 +1299,18 @@ class SettingsWidget(QWidget):
             log.info(f"Applied preset: {preset_name}")
             self.settings_changed.emit()
 
-    def update_parameter_limits(self, param_name: str, min_val=None, max_val=None, inc=None, options=None):
+    def update_parameter_limits(
+        self, param_name: str, min_val=None, max_val=None, inc=None, options=None
+    ):
         """Update parameter limits/options from app.py"""
         widget_map = {
-            'Width': self.roi_width,
-            'Height': self.roi_height,
-            'OffsetX': self.roi_offset_x,
-            'OffsetY': self.roi_offset_y,
-            'ExposureTime': self.exposure,
-            'Gain': self.gain,
-            'AcquisitionFrameRate': self.framerate
+            "Width": self.roi_width,
+            "Height": self.roi_height,
+            "OffsetX": self.roi_offset_x,
+            "OffsetY": self.roi_offset_y,
+            "ExposureTime": self.exposure,
+            "Gain": self.gain,
+            "AcquisitionFrameRate": self.framerate,
         }
 
         if param_name in widget_map:
@@ -1064,26 +1321,26 @@ class SettingsWidget(QWidget):
                 if inc is not None:
                     widget.setSingleStep(inc)
 
-        if param_name == 'PixelFormat' and options:
+        if param_name == "PixelFormat" and options:
             self.pixel_format.clear()
             self.pixel_format.addItems(options)
-        elif param_name == 'SensorReadoutMode' and options:
+        elif param_name == "SensorReadoutMode" and options:
             self.sensor_mode.clear()
             self.sensor_mode.addItems(options)
 
     def set_parameter_value(self, param_name: str, value):
         """Set a parameter value from app.py"""
         widget_map = {
-            'Width': self.roi_width,
-            'Height': self.roi_height,
-            'OffsetX': self.roi_offset_x,
-            'OffsetY': self.roi_offset_y,
-            'ExposureTime': self.exposure,
-            'Gain': self.gain,
-            'BinningHorizontal': self.binning_horizontal,
-            'BinningVertical': self.binning_vertical,
-            'PixelFormat': self.pixel_format,
-            'SensorReadoutMode': self.sensor_mode
+            "Width": self.roi_width,
+            "Height": self.roi_height,
+            "OffsetX": self.roi_offset_x,
+            "OffsetY": self.roi_offset_y,
+            "ExposureTime": self.exposure,
+            "Gain": self.gain,
+            "BinningHorizontal": self.binning_horizontal,
+            "BinningVertical": self.binning_vertical,
+            "PixelFormat": self.pixel_format,
+            "SensorReadoutMode": self.sensor_mode,
         }
 
         if param_name in widget_map:
@@ -1098,11 +1355,14 @@ class SettingsWidget(QWidget):
     def disable_parameter(self, param_name: str):
         """Disable a parameter that doesn't exist in camera"""
         widget_map = {
-            'SensorReadoutMode': self.sensor_mode,
-            'BinningHorizontal': self.binning_horizontal,
-            'BinningVertical': self.binning_vertical,
-            'AcquisitionFrameRate': (self.framerate_enable, self.framerate),
-            'DeviceLinkThroughputLimit': (self.throughput_enable, self.throughput_limit)
+            "SensorReadoutMode": self.sensor_mode,
+            "BinningHorizontal": self.binning_horizontal,
+            "BinningVertical": self.binning_vertical,
+            "AcquisitionFrameRate": (self.framerate_enable, self.framerate),
+            "DeviceLinkThroughputLimit": (
+                self.throughput_enable,
+                self.throughput_limit,
+            ),
         }
 
         if param_name in widget_map:
@@ -1119,43 +1379,61 @@ class SettingsWidget(QWidget):
     def get_settings(self) -> dict:
         """Get all settings as dictionary"""
         return {
-            'roi': {
-                'width': self.roi_width.value(),
-                'height': self.roi_height.value(),
-                'offset_x': self.roi_offset_x.value(),
-                'offset_y': self.roi_offset_y.value(),
-                'binning_h': int(self.binning_horizontal.currentText()) if self.binning_horizontal.isEnabled() else 1,
-                'binning_v': int(self.binning_vertical.currentText()) if self.binning_vertical.isEnabled() else 1
+            "roi": {
+                "width": self.roi_width.value(),
+                "height": self.roi_height.value(),
+                "offset_x": self.roi_offset_x.value(),
+                "offset_y": self.roi_offset_y.value(),
+                "binning_h": int(self.binning_horizontal.currentText())
+                if self.binning_horizontal.isEnabled()
+                else 1,
+                "binning_v": int(self.binning_vertical.currentText())
+                if self.binning_vertical.isEnabled()
+                else 1,
             },
-            'acquisition': {
-                'exposure': self.exposure.value(),
-                'gain': self.gain.value(),
-                'pixel_format': self.pixel_format.currentText(),
-                'sensor_mode': self.sensor_mode.currentText() if self.sensor_mode.isEnabled() else None
+            "acquisition": {
+                "exposure": self.exposure.value(),
+                "gain": self.gain.value(),
+                "pixel_format": self.pixel_format.currentText(),
+                "sensor_mode": self.sensor_mode.currentText()
+                if self.sensor_mode.isEnabled()
+                else None,
             },
-            'framerate': {
-                'enabled': self.framerate_enable.isChecked() and self.framerate_enable.isEnabled(),
-                'fps': self.framerate.value(),
-                'throughput_enabled': self.throughput_enable.isChecked() and self.throughput_enable.isEnabled(),
-                'throughput_limit': self.throughput_limit.value()
+            "framerate": {
+                "enabled": self.framerate_enable.isChecked()
+                and self.framerate_enable.isEnabled(),
+                "fps": self.framerate.value(),
+                "throughput_enabled": self.throughput_enable.isChecked()
+                and self.throughput_enable.isEnabled(),
+                "throughput_limit": self.throughput_limit.value(),
             },
-            'capture': {  # Renamed from 'output'
-                'mode': self.capture_mode.currentText(),
-                'waterfall_lines': self.waterfall_lines.value(),
-                'path': self.output_path.text(),
-                'image_prefix': self.image_prefix.text(),
-                'video_prefix': self.video_prefix.text(),
-                'video_fps': self.video_fps.value(),
-                'preview_off': self.preview_off.isChecked(),
-                'limit_frames': self.limit_frames.value() if self.limit_frames_enable.isChecked() else None,
-                'limit_time': self.limit_time.value() if self.limit_time_enable.isChecked() else None
+            "capture": {  # Renamed from 'output'
+                "mode": self.capture_mode.currentText(),
+                "waterfall_lines": self.waterfall_lines.value(),
+                "path": self.output_path.text(),
+                "image_prefix": self.image_prefix.text(),
+                "video_prefix": self.video_prefix.text(),
+                "video_fps": self.video_fps.value(),
+                "preview_off": self.preview_off.isChecked(),
+                "limit_frames": self.limit_frames.value()
+                if self.limit_frames_enable.isChecked()
+                else None,
+                "limit_time": self.limit_time.value()
+                if self.limit_time_enable.isChecked()
+                else None,
+                "deshear_enabled": self.deshear_enable.isChecked()
+                if self.deshear_enable.isVisible()
+                else False,
+                "deshear_angle": self.deshear_angle.value(),
+                "deshear_px_um": self.deshear_px_um.value(),
             },
-            'transform': {
-                'flip_x': self.flip_x_check.isChecked(),
-                'flip_y': self.flip_y_check.isChecked(),
-                'rotation': int(self.rotation_spin.currentText())
-            }
+            "transform": {
+                "flip_x": self.flip_x_check.isChecked(),
+                "flip_y": self.flip_y_check.isChecked(),
+                "rotation": int(self.rotation_spin.currentText()),
+            },
         }
+
 
 class LogWidget(QWidget):
     """Log display widget with controls"""
@@ -1178,8 +1456,8 @@ class LogWidget(QWidget):
 
         # Log level selector
         self.level_combo = QComboBox()
-        self.level_combo.addItems(['INFO', 'DEBUG'])
-        self.level_combo.setCurrentText('INFO')
+        self.level_combo.addItems(["INFO", "DEBUG"])
+        self.level_combo.setCurrentText("INFO")
         self.level_combo.setStyleSheet("color: white;")
 
         # Don't connect here - let app.py handle it
@@ -1235,13 +1513,14 @@ class LogWidget(QWidget):
             Path("./logs").mkdir(exist_ok=True)
             filepath = Path("./logs") / filename
 
-            with open(filepath, 'w') as f:
-                f.write('\n'.join(self.log_content))
+            with open(filepath, "w") as f:
+                f.write("\n".join(self.log_content))
 
             # Note: This will only appear if INFO level is selected
             logging.getLogger("pylonguy").info(f"Log saved to {filepath}")
         except Exception as e:
             logging.getLogger("pylonguy").error(f"Failed to save log: {e}")
+
 
 class MainWindow(QMainWindow):
     """Main application window"""

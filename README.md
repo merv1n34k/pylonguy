@@ -67,10 +67,9 @@ This allows you to specify any desired frame rate of a final video, e.g.:
 
 Another interesting feature lets you record single line instead of ROI capture,
 called `waterfall`. Use this for:
-- Maximum camera's frame rate
-- Line-scanners
-- Recording all lines in custom `.wtf` format, process to frames with `wtf2png.py`
-script
+- Maximum frame rates (less data to transfer)
+- Line-scanner cameras
+- Monitoring flow in microfluidic channels
 
 ## License
 

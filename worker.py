@@ -1,4 +1,5 @@
 """Worker module - frame and waterfall writer with post-processing"""
+
 import subprocess
 import numpy as np
 from pathlib import Path
@@ -95,7 +96,7 @@ class VideoWorker:
 
                 # Write raw bytes
                 path = self.frames_dir / f"{idx:08d}.raw"
-                with open(path, 'wb') as f:
+                with open(path, "wb") as f:
                     f.write(frame.tobytes())
 
             except Empty:
@@ -112,7 +113,7 @@ class VideoWorker:
             return ""
 
         # Video output path (in parent directory of frames)
-        timestamp = time.strftime('%Y%m%d_%H%M%S')
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
         video_path = self.frames_dir.parent / f"vid_{timestamp}.avi"
 
         try:
@@ -123,22 +124,26 @@ class VideoWorker:
 
             # FFmpeg command using image2 demuxer for raw video frames
             cmd = [
-                "ffmpeg", "-y",
-                "-f", "image2",
-                "-framerate", str(self.fps),
-                "-pixel_format", "gray",
-                "-video_size", f"{self.width}x{self.height}",
-                "-i", input_pattern,
-                "-c:v", "rawvideo",
-                "-pix_fmt", "gray",
-                str(video_path)
+                "ffmpeg",
+                "-y",
+                "-f",
+                "image2",
+                "-framerate",
+                str(self.fps),
+                "-pixel_format",
+                "gray",
+                "-video_size",
+                f"{self.width}x{self.height}",
+                "-i",
+                input_pattern,
+                "-c:v",
+                "rawvideo",
+                "-pix_fmt",
+                "gray",
+                str(video_path),
             ]
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=300
-            )
+            result = subprocess.run(cmd, capture_output=True, timeout=300)
 
             if result.returncode == 0:
                 size_mb = video_path.stat().st_size / (1024 * 1024)
@@ -159,10 +164,17 @@ class VideoWorker:
 class WaterfallWorker:
     """Waterfall writer that saves lines to .wtf file with embedded header"""
 
-    def __init__(self, output_path: str, width: int, buffer_size: int = 1000):
+    def __init__(
+        self,
+        output_path: str,
+        width: int,
+        buffer_size: int = 1000,
+        deshear_angle: float = 0,
+    ):
         self.output_path = Path(output_path)
         self.width = width
         self.buffer_size = buffer_size
+        self.deshear_angle = deshear_angle
 
         # Buffer for batched writes
         self.buffer = []
@@ -177,10 +189,18 @@ class WaterfallWorker:
             self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Open file in write binary mode
-            self.file = open(self.output_path, 'wb')
+            self.file = open(self.output_path, "wb")
 
-            # Write header: magic bytes "WTF1" + width (2 bytes, little-endian)
-            header = b'WTF1' + self.width.to_bytes(2, 'little')
+            # Write header with optional DSR extension
+            if self.deshear_angle > 0:
+                # Extended header: 'WTFDSR' + width (2 bytes) + angle_byte
+                header = b"WTFDSR" + self.width.to_bytes(2, "little")
+                angle_byte = int((self.deshear_angle / 90.0) * 255)
+                header += angle_byte.to_bytes(1, "unsigned")
+            else:
+                # Standard header: 'WTF1' + width (2 bytes)
+                header = b"WTF1" + self.width.to_bytes(2, "little")
+
             self.file.write(header)
 
             self.active = True
@@ -251,6 +271,8 @@ class WaterfallWorker:
             self.file.close()
             self.file = None
 
-        log.info(f"Waterfall saved: {self.output_path} ({self.line_count} lines, width={self.width})")
+        log.info(
+            f"Waterfall saved: {self.output_path} ({self.line_count} lines, width={self.width})"
+        )
 
         return str(self.output_path)

@@ -16,6 +16,7 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 import sys
+from deshear_util import deshear_array
 
 
 def read_waterfall_file(file_path: Path):
@@ -23,28 +24,38 @@ def read_waterfall_file(file_path: Path):
     Read .wtf or .kmg file with embedded header and return as numpy array
     Supports both WTF1 and KMG1 headers for backward compatibility
     """
-    with open(file_path, 'rb') as f:
+    with open(file_path, "rb") as f:
         # Read header
         header = f.read(6)
 
         if len(header) < 6:
-            print(f"Error: Invalid file format (header too short)")
             raise ValueError("Invalid file")
 
-        # Check for supported headers
         magic = header[:4]
-        if magic == b'WTF1':
+        deshear_angle = 0
+
+        if magic == b"WTFD":  # Check for WTFDSR
+            # Read full extended header
+            f.seek(0)
+            header = f.read(9)
+            if header[:6] == b"WTFDSR":
+                file_type = "waterfall (with deshear)"
+                width = int.from_bytes(header[6:8], "little")
+                angle_byte = header[8]
+                deshear_angle = (angle_byte / 255.0) * 90.0
+                print(f"Deshear angle detected: {deshear_angle:.1f}°")
+            else:
+                raise ValueError("Invalid WTFDSR header")
+        elif magic == b"WTF1":
             file_type = "waterfall"
-        elif magic == b'KMG1':
+            width = int.from_bytes(header[4:6], "little")
+        elif magic == b"KMG1":
             file_type = "kymograph (legacy)"
+            width = int.from_bytes(header[4:6], "little")
         else:
-            print(f"Error: Invalid file format (expected WTF1 or KMG1 header, got {magic})")
-            raise ValueError("Invalid file format")
+            raise ValueError(f"Invalid header: {magic}")
 
-        # Read width from header
-        width = int.from_bytes(header[4:6], 'little')
-
-        # Read the rest as data
+        # Read data
         data = f.read()
 
     # Calculate dimensions
@@ -59,17 +70,23 @@ def read_waterfall_file(file_path: Path):
     array = array.reshape((lines, width))
 
     print(f"Loaded {file_type}: {lines} lines × {width} pixels")
-    return array
+
+    return array, deshear_angle
 
 
 def save_png(array: np.ndarray, output_path: Path):
     """Save numpy array as PNG"""
-    image = Image.fromarray(array, mode='L')
-    image.save(output_path, 'PNG')
+    image = Image.fromarray(array, mode="L")
+    image.save(output_path, "PNG")
     print(f"Saved: {output_path}")
 
 
-def convert_file(input_path: Path, output_path: Path = None, max_lines: int = None):
+def convert_file(
+    input_path: Path,
+    output_path: Path = None,
+    max_lines: int = None,
+    force_deshear: float = None,
+):
     """Convert a single .wtf or .kmg file to PNG(s)"""
     if not input_path.exists():
         print(f"Error: File not found: {input_path}")
@@ -77,18 +94,30 @@ def convert_file(input_path: Path, output_path: Path = None, max_lines: int = No
 
     try:
         # Read waterfall/kymograph
-        array = read_waterfall_file(input_path)
+        array, auto_deshear = read_waterfall_file(input_path)
         total_lines = array.shape[0]
+
+        # Apply deshearing if needed
+        if force_deshear is not None and force_deshear > 0:
+            print(f"Applying forced deshear: {force_deshear}°")
+            # Default values for missing parameters
+            array = deshear_array(array, force_deshear, px_um=3.8, dy_um=1.0)
+        elif auto_deshear > 0:
+            print(f"Auto-applying deshear from header: {auto_deshear:.1f}°")
+
+            array = deshear_array(array, auto_deshear, px_um=3.8, dy_um=1.0)
 
         # If no line limit specified, save as single file
         if max_lines is None or total_lines <= max_lines:
             if output_path is None:
-                output_path = input_path.with_suffix('.png')
+                output_path = input_path.with_suffix(".png")
             save_png(array, output_path)
         else:
             # Split into multiple files
             num_files = (total_lines + max_lines - 1) // max_lines  # Ceiling division
-            print(f"Splitting into {num_files} files of up to {max_lines} lines each...")
+            print(
+                f"Splitting into {num_files} files of up to {max_lines} lines each..."
+            )
 
             base_name = output_path.stem if output_path else input_path.stem
             base_dir = output_path.parent if output_path else input_path.parent
@@ -101,10 +130,10 @@ def convert_file(input_path: Path, output_path: Path = None, max_lines: int = No
                 chunk = array[start_line:end_line, :]
 
                 # Generate filename with zero-padded index
-                chunk_path = base_dir / f"{base_name}_{i+1:04d}.png"
+                chunk_path = base_dir / f"{base_name}_{i + 1:04d}.png"
 
                 save_png(chunk, chunk_path)
-                print(f"  Chunk {i+1}/{num_files}: lines {start_line+1}-{end_line}")
+                print(f"  Chunk {i + 1}/{num_files}: lines {start_line + 1}-{end_line}")
 
         return True
 
@@ -115,26 +144,31 @@ def convert_file(input_path: Path, output_path: Path = None, max_lines: int = No
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Convert .wtf (waterfall) or .kmg (kymograph) files to PNG images'
+        description="Convert .wtf (waterfall) or .kmg (kymograph) files to PNG images"
     )
 
-    parser.add_argument('input', nargs='+', help='Input .wtf or .kmg file(s)')
-    parser.add_argument('output', nargs='?', help='Output PNG file (optional)')
-    parser.add_argument('--lines', '-l', type=int, help='Max lines per PNG (splits into multiple files)')
+    parser.add_argument("input", nargs="+", help="Input .wtf or .kmg file(s)")
+    parser.add_argument("output", nargs="?", help="Output PNG file (optional)")
+    parser.add_argument(
+        "--lines", "-l", type=int, help="Max lines per PNG (splits into multiple files)"
+    )
+    parser.add_argument(
+        "--deshear", "-d", type=float, help="Force deshear angle in degrees (0-90)"
+    )
 
     args = parser.parse_args()
 
     # Handle input files
     input_files = []
     for pattern in args.input:
-        if '*' in pattern:
+        if "*" in pattern:
             # Support both .wtf and .kmg extensions
-            wtf_files = list(Path('.').glob(pattern.replace('*', '*.wtf')))
-            kmg_files = list(Path('.').glob(pattern.replace('*', '*.kmg')))
+            wtf_files = list(Path(".").glob(pattern.replace("*", "*.wtf")))
+            kmg_files = list(Path(".").glob(pattern.replace("*", "*.kmg")))
             input_files.extend(wtf_files)
             input_files.extend(kmg_files)
             # Also check if pattern matches directly
-            direct_matches = list(Path('.').glob(pattern))
+            direct_matches = list(Path(".").glob(pattern))
             for match in direct_matches:
                 if match not in input_files:
                     input_files.append(match)
@@ -148,17 +182,19 @@ def main():
     # Convert single file with specified output
     if len(input_files) == 1 and args.output and not args.lines:
         # Single file, output specified, no splitting
-        convert_file(input_files[0], Path(args.output), args.lines)
+        convert_file(
+            input_files[0], Path(args.output), args.lines, force_deshear=args.deshear
+        )
     else:
         # Multiple files or splitting mode
         if args.output and len(input_files) > 1:
             print("Warning: Output name ignored for multiple files")
 
         for input_file in input_files:
-            if input_file.suffix.lower() in ['.wtf', '.kmg']:
+            if input_file.suffix.lower() in [".wtf", ".kmg"]:
                 print(f"\nConverting: {input_file}")
-                convert_file(input_file, None, args.lines)
+                convert_file(input_file, None, args.lines, force_deshear=args.deshear)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
