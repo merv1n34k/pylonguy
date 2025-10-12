@@ -399,9 +399,15 @@ class PylonApp:
             self.window.settings.btn_connect.setEnabled(False)
             self.window.settings.btn_disconnect.setEnabled(True)
 
+            if self.waterfall_mode:
+                self.camera.set_parameter("Height", 1)
+                self.window.settings.roi_height.setValue(1)
+                h_info = {"value": 1}  # Override for display
+            else:
+                h_info = self.camera.get_parameter("Height")
+
             # Get current ROI
             w_info = self.camera.get_parameter("Width")
-            h_info = self.camera.get_parameter("Height")
             if w_info and h_info:
                 w = w_info.get("value", 640)
                 h = h_info.get("value", 480)
@@ -448,7 +454,9 @@ class PylonApp:
                 self.camera.set_parameter("OffsetY", 0)
 
             cam_settings["Width"] = settings["roi"]["width"]
-            cam_settings["Height"] = settings["roi"]["height"]
+            cam_settings["Height"] = (
+                1 if self.waterfall_mode else settings["roi"]["height"]
+            )
             cam_settings["OffsetX"] = settings["roi"]["offset_x"]
             cam_settings["OffsetY"] = settings["roi"]["offset_y"]
 

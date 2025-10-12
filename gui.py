@@ -605,86 +605,76 @@ class PreviewWidget(QWidget):
 
         # Draw rulers
         if (self.ruler_v or self.ruler_h or self.ruler_radial) and self.image_rect:
-            painter.setPen(
-                QPen(QColor(255, 255, 0, 180), 1, Qt.SolidLine)
-            )  # Yellow lines
+            painter.setPen(QPen(QColor(255, 255, 0, 180), 1, Qt.SolidLine))
 
             cx = self.image_rect.center().x()
             cy = self.image_rect.center().y()
 
             if self.ruler_v:
-                # Vertical lines - grid pattern every 1/10 of width
-                step = self.image_rect.width() // 10
+                # Vertical lines - ensure minimum step of 1
+                step = max(1, self.image_rect.width() // 10)  # ADD max(1, ...)
                 for x in range(
                     self.image_rect.left(), self.image_rect.right() + 1, step
                 ):
                     painter.drawLine(
                         x, self.image_rect.top(), x, self.image_rect.bottom()
                     )
+                # Also draw center line
+                painter.drawLine(
+                    cx, self.image_rect.top(), cx, self.image_rect.bottom()
+                )
 
             if self.ruler_h:
-                # Horizontal lines - grid pattern every 1/10 of height
-                step = self.image_rect.height() // 10
+                # Horizontal lines - ensure minimum step of 1
+                step = max(1, self.image_rect.height() // 10)  # ADD max(1, ...)
                 for y in range(
                     self.image_rect.top(), self.image_rect.bottom() + 1, step
                 ):
                     painter.drawLine(
                         self.image_rect.left(), y, self.image_rect.right(), y
                     )
+                # Also draw center line
+                painter.drawLine(
+                    self.image_rect.left(), cy, self.image_rect.right(), cy
+                )
 
-            if self.ruler_radial:
-                # Draw radial lines extending to rectangle edges
-                for angle in range(0, 360, 30):
-                    radian = math.radians(angle)
+        if self.ruler_radial:
+            # Use smaller dimension as radius
+            radius = min(self.image_rect.width(), self.image_rect.height()) // 2
 
-                    # Calculate line endpoint at rectangle edge
-                    dx = math.cos(radian)
-                    dy = -math.sin(radian)  # Negative because y increases downward
+            for angle in range(0, 360, 30):
+                radian = math.radians(angle)
 
-                    # Find intersection with rectangle edges
-                    if abs(dx) > 0.001:  # Not vertical
-                        t_right = (self.image_rect.right() - cx) / dx
-                        t_left = (self.image_rect.left() - cx) / dx
-                    else:
-                        t_right = t_left = float("inf")
+                # Simple calculation - no edge detection needed
+                x_end = cx + radius * math.cos(radian)
+                y_end = cy - radius * math.sin(radian)  # Negative for screen coords
 
-                    if abs(dy) > 0.001:  # Not horizontal
-                        t_bottom = (self.image_rect.bottom() - cy) / dy
-                        t_top = (self.image_rect.top() - cy) / dy
-                    else:
-                        t_bottom = t_top = float("inf")
+                painter.drawLine(cx, cy, int(x_end), int(y_end))
 
-                    # Find the positive t value that gives us the edge intersection
-                    t = min(t for t in [t_right, t_left, t_bottom, t_top] if t > 0)
+                # Draw angle labels at 80% of radius
+                label_radius = radius * 0.8
+                x_label = cx + label_radius * math.cos(radian)
+                y_label = cy - label_radius * math.sin(radian)
 
-                    x_end = cx + t * dx
-                    y_end = cy + t * dy
-                    painter.drawLine(cx, cy, int(x_end), int(y_end))
-
-                    # Draw angle labels at 60% of the way to edge
-                    label_t = t * 0.6
-                    x_label = cx + label_t * dx
-                    y_label = cy + label_t * dy
-
-                    label_text = f"{angle}°"
-                    painter.setPen(QPen(QColor(0, 0, 0), 2))  # Black outline
-                    painter.drawText(
-                        int(x_label - 15),
-                        int(y_label - 5),
-                        30,
-                        10,
-                        Qt.AlignCenter,
-                        label_text,
-                    )
-                    painter.setPen(QPen(QColor(255, 255, 0), 1))  # Yellow text
-                    painter.drawText(
-                        int(x_label - 14),
-                        int(y_label - 6),
-                        28,
-                        10,
-                        Qt.AlignCenter,
-                        label_text,
-                    )
+                label_text = f"{angle}°"
+                painter.setPen(QPen(QColor(0, 0, 0), 2))  # Black outline
+                painter.drawText(
+                    int(x_label - 15),
+                    int(y_label - 5),
+                    30,
+                    10,
+                    Qt.AlignCenter,
+                    label_text,
+                )
+                painter.setPen(QPen(QColor(255, 255, 0), 1))  # Yellow text
+                painter.drawText(
+                    int(x_label - 14),
+                    int(y_label - 6),
+                    28,
+                    10,
+                    Qt.AlignCenter,
+                    label_text,
+                )
 
         # Add transform indicator if any transforms are active
         if self.flip_x or self.flip_y or self.rotation != 0:
