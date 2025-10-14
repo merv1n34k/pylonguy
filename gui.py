@@ -810,7 +810,7 @@ class PreviewWidget(QWidget):
         self.display.setText(message)
         self.display.setAlignment(Qt.AlignCenter)
         self.current_pixmap = None
-        self.image_rect = None
+        #self.image_rect = None
         self.original_frame_size = None
         self.clear_selection()
 
