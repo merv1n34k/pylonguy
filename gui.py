@@ -67,23 +67,17 @@ class PreviewDisplay(QWidget):
             return
 
         if self.waterfall_mode and self.waterfall_buffer is not None:
-            # Waterfall mode - process line
-            profile = np.median(frame, axis=0).astype(np.uint8)
+            # Waterfall mode - frame is already a single line (height=1)
+            if len(frame.shape) == 2:
+                if frame.shape[0] == 1:
+                    # Single row frame - extract it
+                    line = frame[0, :].astype(np.uint8)
+            else:
+                # Already 1D array or unexpected shape
+                line = frame[: self.waterfall_buffer.shape[1]].astype(np.uint8)
 
-            # Apply deshear if enabled
-            if self.deshear_enabled and self.deshear_angle > 0:
-                from deshear_util import shift_row_linear
-                import math
-
-                center_line = self.waterfall_buffer.shape[0] / 2
-                relative_pos = self.waterfall_row - center_line
-                dy_um = 1.0
-                tan_theta = math.tan(math.radians(self.deshear_angle))
-                shift_px = relative_pos * tan_theta * dy_um / self.deshear_px_um
-                profile = shift_row_linear(profile, shift_px)
-
-            # Add to buffer
-            self.waterfall_buffer[self.waterfall_row] = profile
+            # Add to buffer directly (no deshearing in preview)
+            self.waterfall_buffer[self.waterfall_row] = line
             self.waterfall_row = (self.waterfall_row + 1) % self.waterfall_buffer.shape[
                 0
             ]
@@ -294,25 +288,24 @@ class PreviewDisplay(QWidget):
                         Qt.AlignCenter,
                         label_text,
                     )
-                    # Draw transform indicators
-                    if self.flip_x or self.flip_y or self.rotation != 0:
-                        transform_text = []
-                        if self.flip_x:
-                            transform_text.append("FlipX")
-                        if self.flip_y:
-                            transform_text.append("FlipY")
-                        if self.rotation != 0:
-                            transform_text.append(f"Rot{self.rotation}°")
 
-                        painter.setPen(QColor(255, 255, 0))
-                        painter.drawText(
-                            10, 20, " ".join(transform_text) + " (preview only)"
-                        )
+        # Draw transform indicators
+        if self.flip_x or self.flip_y or self.rotation != 0:
+            transform_text = []
+            if self.flip_x:
+                transform_text.append("FlipX")
+            if self.flip_y:
+                transform_text.append("FlipY")
+            if self.rotation != 0:
+                transform_text.append(f"Rot{self.rotation}°")
+            painter.setPen(QColor(255, 255, 0))
+            painter.drawText(10, 20, " ".join(transform_text) + " (preview only)")
 
-                    # Draw deshear indicator
-                    if self.deshear_enabled and self.waterfall_mode:
-                        painter.setPen(QColor(255, 255, 0))
-                        painter.drawText(10, 40, f"DESHEAR {self.deshear_angle:.1f}°")
+        if self.deshear_enabled and self.waterfall_mode:
+            painter.setPen(QColor(255, 255, 0))
+            painter.drawText(
+                10, 40, f"DESHEAR {self.deshear_angle:.1f}° (not shown in preview)"
+            )
 
     # Keep all mouse event handlers and other methods unchanged
     def mousePressEvent(self, event):
