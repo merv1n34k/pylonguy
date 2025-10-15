@@ -1,7 +1,7 @@
 """GUI module - user interface elements"""
 
 from PyQt5.QtCore import Qt, pyqtSignal, QRect, QPoint
-from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QPen, QTransform
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QPen, QTransform, QFont
 from PyQt5.QtWidgets import *
 import numpy as np
 import logging
@@ -13,65 +13,395 @@ from pathlib import Path
 log = logging.getLogger("pylonguy")
 
 
-class PreviewWidget(QWidget):
-    """Camera preview with status display and selection tool"""
+class PreviewDisplay(QWidget):
+    """Pure zero-copy frame display - real-time rendering, no caching"""
 
-    # Signals
-    selection_changed = pyqtSignal(object)  # Emits QRect or None
-    offset_x_changed = pyqtSignal(int)
-    offset_y_changed = pyqtSignal(int)
+    selection_changed = pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
-        self.current_pixmap = None
+
+        # Frame data (zero-copy)
+        self.current_frame = None  # numpy array reference only
+
+        # Geometry
+        self.frame_rect = QRect()
+
+        # Selection state
         self.selection_rect = None
         self.selecting = False
         self.select_start = None
         self.mouse_pos = None
-        self.image_rect = None
-        self.original_frame_size = None
 
-        # Waterfall buffer
+        # Waterfall state
         self.waterfall_buffer = None
         self.waterfall_row = 0
         self.waterfall_mode = False
 
-        # Transform settings
+        # Display modes
         self.flip_x = False
         self.flip_y = False
         self.rotation = 0
-
-        # Ruler settings
         self.ruler_v = False
         self.ruler_h = False
         self.ruler_radial = False
 
-        # Deshear settings
+        # Deshear parameters
         self.deshear_enabled = False
         self.deshear_angle = 0
         self.deshear_px_um = 3.8
 
+        # Message display
+        self.message = ""
+
+        # Setup widget
+        self.setMouseTracking(True)
+        self.setAutoFillBackground(True)
+        pal = self.palette()
+        pal.setColor(self.backgroundRole(), Qt.black)
+        self.setPalette(pal)
+
+    def setFrame(self, frame: np.ndarray):
+        """Zero-copy frame update - no caching"""
+        if frame is None:
+            return
+
+        if self.waterfall_mode and self.waterfall_buffer is not None:
+            # Waterfall mode - process line
+            profile = np.median(frame, axis=0).astype(np.uint8)
+
+            # Apply deshear if enabled
+            if self.deshear_enabled and self.deshear_angle > 0:
+                from deshear_util import shift_row_linear
+                import math
+
+                center_line = self.waterfall_buffer.shape[0] / 2
+                relative_pos = self.waterfall_row - center_line
+                dy_um = 1.0
+                tan_theta = math.tan(math.radians(self.deshear_angle))
+                shift_px = relative_pos * tan_theta * dy_um / self.deshear_px_um
+                profile = shift_row_linear(profile, shift_px)
+
+            # Add to buffer
+            self.waterfall_buffer[self.waterfall_row] = profile
+            self.waterfall_row = (self.waterfall_row + 1) % self.waterfall_buffer.shape[
+                0
+            ]
+
+            # Prepare display array
+            if self.waterfall_row == 0:
+                self.current_frame = self.waterfall_buffer
+            else:
+                self.current_frame = np.vstack(
+                    [
+                        self.waterfall_buffer[self.waterfall_row :],
+                        self.waterfall_buffer[: self.waterfall_row],
+                    ]
+                )
+        else:
+            # Normal mode - just store reference
+            if frame.dtype == np.uint16:
+                frame = (frame >> 8).astype(np.uint8)
+            self.current_frame = frame
+
+        self.message = ""
+        self.update()  # Trigger repaint
+
+    def showMessage(self, text: str):
+        """Show text message"""
+        self.message = text
+        self.current_frame = None
+        self.update()
+
+    def paintEvent(self, event):
+        """Real-time painting - no caching"""
+        painter = QPainter(self)
+
+        # Always clear background
+        painter.fillRect(self.rect(), Qt.black)
+
+        # Draw message if set
+        if self.message:
+            painter.setPen(Qt.white)
+            font = QFont()
+            font.setPointSize(20)
+            painter.setFont(font)
+            painter.drawText(self.rect(), Qt.AlignCenter, self.message)
+            return
+
+        # Draw frame if available
+        if self.current_frame is not None:
+            # Create QImage wrapper every time (no caching)
+            h, w = self.current_frame.shape[:2]
+
+            if len(self.current_frame.shape) == 2:
+                # Grayscale
+                qimage = QImage(
+                    self.current_frame.data, w, h, w, QImage.Format_Grayscale8
+                )
+            else:
+                # RGB
+                qimage = QImage(
+                    self.current_frame.data, w, h, w * 3, QImage.Format_RGB888
+                )
+
+            # Calculate display rectangle
+            widget_rect = self.rect()
+            scale_x = widget_rect.width() / w if w > 0 else 1
+            scale_y = widget_rect.height() / h if h > 0 else 1
+            scale = min(scale_x, scale_y)
+
+            final_w = int(w * scale)
+            final_h = int(h * scale)
+            x = (widget_rect.width() - final_w) // 2
+            y = (widget_rect.height() - final_h) // 2
+
+            self.frame_rect = QRect(x, y, final_w, final_h)
+
+            # Apply transforms if needed
+            if self.flip_x or self.flip_y or self.rotation != 0:
+                painter.save()
+                painter.translate(self.frame_rect.center())
+
+                transform = QTransform()
+                if self.rotation != 0:
+                    transform.rotate(self.rotation)
+                if self.flip_x:
+                    transform.scale(-1, 1)
+                if self.flip_y:
+                    transform.scale(1, -1)
+
+                painter.setTransform(transform, True)
+
+                offset_rect = QRect(
+                    -self.frame_rect.width() // 2,
+                    -self.frame_rect.height() // 2,
+                    self.frame_rect.width(),
+                    self.frame_rect.height(),
+                )
+
+                # Scale and draw the image
+                scaled_image = qimage.scaled(
+                    self.frame_rect.width(),
+                    self.frame_rect.height(),
+                    Qt.KeepAspectRatio,
+                    Qt.FastTransformation,
+                )
+                painter.drawImage(offset_rect, scaled_image)
+                painter.restore()
+            else:
+                # Scale and draw directly
+                scaled_image = qimage.scaled(
+                    self.frame_rect.width(),
+                    self.frame_rect.height(),
+                    Qt.KeepAspectRatio,
+                    Qt.FastTransformation,
+                )
+                painter.drawImage(self.frame_rect, scaled_image)
+
+            # Draw overlays
+            self._drawOverlays(painter)
+
+    def _drawOverlays(self, painter):
+        """Draw selection, rulers, and indicators"""
+
+        # Draw selection
+        if self.selection_rect or (
+            self.selecting and self.select_start and self.mouse_pos
+        ):
+            pen = QPen(QColor(0, 180, 255), 2, Qt.DashLine)
+            pen.setDashPattern([5, 3])
+            painter.setPen(pen)
+            painter.setBrush(QColor(0, 120, 255, 30))
+
+            if self.selection_rect:
+                painter.drawRect(self.selection_rect)
+            else:
+                temp_rect = QRect(self.select_start, self.mouse_pos).normalized()
+                painter.drawRect(temp_rect)
+
+        # Draw rulers only if frame rect is valid
+        if (
+            self.ruler_v or self.ruler_h or self.ruler_radial
+        ) and not self.frame_rect.isEmpty():
+            painter.setPen(QPen(QColor(255, 255, 0, 180), 1, Qt.SolidLine))
+
+            cx = self.frame_rect.center().x()
+            cy = self.frame_rect.center().y()
+
+            if self.ruler_v:
+                step = max(1, self.frame_rect.width() // 10)
+                for x in range(
+                    self.frame_rect.left(), self.frame_rect.right() + 1, step
+                ):
+                    painter.drawLine(
+                        x, self.frame_rect.top(), x, self.frame_rect.bottom()
+                    )
+                painter.drawLine(
+                    cx, self.frame_rect.top(), cx, self.frame_rect.bottom()
+                )
+
+            if self.ruler_h:
+                step = max(1, self.frame_rect.height() // 10)
+                for y in range(
+                    self.frame_rect.top(), self.frame_rect.bottom() + 1, step
+                ):
+                    painter.drawLine(
+                        self.frame_rect.left(), y, self.frame_rect.right(), y
+                    )
+                painter.drawLine(
+                    self.frame_rect.left(), cy, self.frame_rect.right(), cy
+                )
+
+            if self.ruler_radial:
+                import math
+
+                radius = min(self.frame_rect.width(), self.frame_rect.height())
+
+                for angle in range(0, 360, 30):
+                    radian = math.radians(angle)
+                    x_end = cx + radius * math.cos(radian)
+                    y_end = cy - radius * math.sin(radian)
+                    painter.drawLine(cx, cy, int(x_end), int(y_end))
+
+                    # Labels
+                    label_radius = radius * 0.3
+                    x_label = cx + label_radius * math.cos(radian)
+                    y_label = cy - label_radius * math.sin(radian)
+
+                    label_text = f"{angle}°"
+                    painter.setPen(QPen(QColor(0, 0, 0), 2))
+                    painter.drawText(
+                        int(x_label - 15),
+                        int(y_label - 5),
+                        30,
+                        10,
+                        Qt.AlignCenter,
+                        label_text,
+                    )
+                    painter.setPen(QPen(QColor(255, 255, 0), 1))
+                    painter.drawText(
+                        int(x_label - 14),
+                        int(y_label - 6),
+                        28,
+                        10,
+                        Qt.AlignCenter,
+                        label_text,
+                    )
+
+        # Draw transform indicators
+        if self.flip_x or self.flip_y or self.rotation != 0:
+            transform_text = []
+            if self.flip_x:
+                transform_text.append("FlipX")
+            if self.flip_y:
+                transform_text.append("FlipY")
+            if self.rotation != 0:
+                transform_text.append(f"Rot{self.rotation}°")
+
+            painter.setPen(QColor(255, 255, 0))
+            painter.drawText(10, 20, " ".join(transform_text) + " (preview only)")
+
+        # Draw deshear indicator
+        if self.deshear_enabled and self.waterfall_mode:
+            painter.setPen(QColor(255, 255, 0))
+            painter.drawText(10, 40, f"DESHEAR {self.deshear_angle:.1f}°")
+
+    # Keep all mouse event handlers and other methods unchanged
+    def mousePressEvent(self, event):
+        """Start selection"""
+        if event.button() == Qt.LeftButton:
+            self.select_start = event.pos()
+            self.selecting = True
+            self.selection_rect = None
+
+    def mouseMoveEvent(self, event):
+        """Track selection"""
+        self.mouse_pos = event.pos()
+        if self.selecting:
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        """Finish selection"""
+        if event.button() == Qt.LeftButton and self.selecting:
+            self.selecting = False
+            if (
+                self.select_start
+                and self.mouse_pos
+                and self.select_start != self.mouse_pos
+            ):
+                self.selection_rect = QRect(
+                    self.select_start, self.mouse_pos
+                ).normalized()
+                if self.selection_rect.isValid() and self.selection_rect.width() > 5:
+                    pixel_rect = self._mapToFrameCoords(self.selection_rect)
+                    self.selection_changed.emit(pixel_rect)
+                else:
+                    self.clearSelection()
+            else:
+                self.clearSelection()
+            self.update()
+
+    def _mapToFrameCoords(self, display_rect: QRect) -> QRect:
+        """Map display coordinates to frame coordinates"""
+        if self.current_frame is None or self.frame_rect.isEmpty():
+            return QRect()
+
+        h, w = self.current_frame.shape[:2]
+
+        rel_x = display_rect.x() - self.frame_rect.x()
+        rel_y = display_rect.y() - self.frame_rect.y()
+
+        scale_x = w / self.frame_rect.width() if self.frame_rect.width() > 0 else 1
+        scale_y = h / self.frame_rect.height() if self.frame_rect.height() > 0 else 1
+
+        frame_x = max(0, min(int(rel_x * scale_x), w - 1))
+        frame_y = max(0, min(int(rel_y * scale_y), h - 1))
+        frame_w = min(int(display_rect.width() * scale_x), w - frame_x)
+        frame_h = min(int(display_rect.height() * scale_y), h - frame_y)
+
+        return QRect(frame_x, frame_y, frame_w, frame_h)
+
+    def clearSelection(self):
+        """Clear selection"""
+        self.selection_rect = None
+        self.selecting = False
+        self.select_start = None
+        self.mouse_pos = None
+        self.update()
+
+    def getSelection(self) -> QRect:
+        """Get current selection in frame coordinates"""
+        if self.selection_rect and self.selection_rect.isValid():
+            return self._mapToFrameCoords(self.selection_rect)
+        return QRect()
+
+    def getWaterfallBuffer(self) -> np.ndarray:
+        """Get waterfall buffer for capture"""
+        if self.waterfall_mode and self.waterfall_buffer is not None:
+            if self.waterfall_row == 0:
+                return self.waterfall_buffer.copy()
+            else:
+                return np.vstack(
+                    [
+                        self.waterfall_buffer[self.waterfall_row :],
+                        self.waterfall_buffer[: self.waterfall_row],
+                    ]
+                )
+        return None
+
+
+class PreviewControls(QWidget):
+    """Preview control panel - status, buttons, sliders"""
+
+    def __init__(self):
+        super().__init__()
         self.init_ui()
 
     def init_ui(self):
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-
-        # Preview display
-        self.display = QLabel("No Camera")
-        self.display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.display.setStyleSheet("""
-            QLabel {
-                background: #000;
-                color: #fff;
-                font-size: 20px;
-            }
-        """)
-        self.display.setAlignment(Qt.AlignCenter)
-        self.display.setMouseTracking(True)
-        self.display.installEventFilter(self)
-        layout.addWidget(self.display, 70)
 
         # Status bar
         status_widget = QWidget()
@@ -121,7 +451,7 @@ class PreviewWidget(QWidget):
         frames_layout = QHBoxLayout()
         frames_layout.setContentsMargins(0, 0, 0, 0)
         frames_layout.setSpacing(0)
-        self.frames_label = QLabel(" FRAMES ")  # Will change to LINES in waterfall mode
+        self.frames_label = QLabel(" FRAMES ")
         self.frames_label.setStyleSheet(
             "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
         )
@@ -182,7 +512,7 @@ class PreviewWidget(QWidget):
         sel_layout.addWidget(self.sel_value, 1)
         sel_widget.setLayout(sel_layout)
 
-        # Add all sections with equal stretch
+        # Add all status sections
         status_layout.addWidget(fps_widget, 1)
         status_layout.addWidget(rec_widget, 1)
         status_layout.addWidget(frames_widget, 1)
@@ -191,7 +521,7 @@ class PreviewWidget(QWidget):
         status_layout.addWidget(sel_widget, 1)
 
         status_widget.setLayout(status_layout)
-        layout.addWidget(status_widget, 10)
+        layout.addWidget(status_widget)
 
         # Control buttons
         button_widget = QWidget()
@@ -226,7 +556,6 @@ class PreviewWidget(QWidget):
         self.btn_capture = QPushButton("Capture")
         self.btn_record = QPushButton("Record")
         self.btn_clear_selection = QPushButton("Clear Selection")
-        self.btn_clear_selection.clicked.connect(self.clear_selection)
 
         button_layout.addWidget(self.btn_live)
         button_layout.addWidget(self.btn_capture)
@@ -234,7 +563,7 @@ class PreviewWidget(QWidget):
         button_layout.addWidget(self.btn_clear_selection)
 
         button_widget.setLayout(button_layout)
-        layout.addWidget(button_widget, 20)
+        layout.addWidget(button_widget)
 
         # Offset sliders
         slider_widget = QWidget()
@@ -304,10 +633,9 @@ class PreviewWidget(QWidget):
         slider_layout.addLayout(x_layout)
         slider_layout.addLayout(y_layout)
         slider_widget.setLayout(slider_layout)
+        layout.addWidget(slider_widget)
 
-        layout.addWidget(slider_widget, 5)
-
-        # Connect slider signals
+        # Connect slider value displays
         self.offset_x_slider.valueChanged.connect(
             lambda v: self.offset_x_value.setText(str(v))
         )
@@ -315,61 +643,10 @@ class PreviewWidget(QWidget):
             lambda v: self.offset_y_value.setText(str(v))
         )
 
-        # Connect to signals:
-        self.offset_x_slider.valueChanged.connect(self.offset_x_changed.emit)
-        self.offset_y_slider.valueChanged.connect(self.offset_y_changed.emit)
-
         self.setLayout(layout)
-        self.setFocusPolicy(Qt.StrongFocus)
 
-    def set_waterfall_mode(self, enabled: bool, width: int = 640, lines: int = 500):
-        """Enable or disable waterfall mode with smaller default buffer"""
-        self.waterfall_mode = enabled
-        if enabled:
-            # Use smaller buffer for better performance
-            lines = min(lines, 500)  # Cap at 500 lines for responsiveness
-            self.waterfall_buffer = np.full((lines, width), 255, dtype=np.uint8)
-            self.waterfall_row = 0
-            self.frames_label.setText(" LINES ")
-            log.info(f"Waterfall mode enabled: {width}x{lines} buffer")
-        else:
-            self.waterfall_buffer = None
-            self.waterfall_row = 0
-            self.frames_label.setText(" FRAMES ")
-            log.info("Waterfall mode disabled")
-
-    def set_transform(self, flip_x: bool, flip_y: bool, rotation: int):
-        """Set preview transform settings"""
-        self.flip_x = flip_x
-        self.flip_y = flip_y
-        self.rotation = int(rotation) if isinstance(rotation, str) else rotation
-        if self.current_pixmap:
-            self._update_display()
-
-    def set_rulers(self, v: bool, h: bool, radial: bool):
-        """Set ruler display modes"""
-        self.ruler_v = v
-        self.ruler_h = h
-        self.ruler_radial = radial
-        if self.current_pixmap or self.waterfall_mode:
-            self._update_display()
-
-    def set_deshear(self, enabled: bool, angle: float, px_um: float):
-        """Set deshear parameters"""
-        self.deshear_enabled = enabled
-        self.deshear_angle = angle
-        self.deshear_px_um = px_um
-        if self.waterfall_mode:
-            self._update_display()
-
-    def resizeEvent(self, event):
-        """Handle resize to update preview scaling"""
-        super().resizeEvent(event)
-        if self.current_pixmap or self.waterfall_mode:
-            self._update_display()
-
-    def update_status(self, **kwargs):
-        """Update status bar values"""
+    def updateStatus(self, **kwargs):
+        """Update status displays"""
         if "fps" in kwargs:
             self.fps_value.setText(f" {kwargs['fps']:.1f} ")
 
@@ -394,425 +671,135 @@ class PreviewWidget(QWidget):
         if "roi" in kwargs:
             self.roi_value.setText(f" {kwargs['roi']} ")
 
+        if "selection" in kwargs:
+            if kwargs["selection"]:
+                self.sel_value.setText(f" {kwargs['selection']} ")
+            else:
+                self.sel_value.setText(" None ")
+
+    def setWaterfallMode(self, enabled: bool):
+        """Update labels for waterfall mode"""
+        if enabled:
+            self.frames_label.setText(" LINES ")
+        else:
+            self.frames_label.setText(" FRAMES ")
+
+
+class PreviewWidget(QWidget):
+    """Container widget that combines display and controls"""
+
+    # Forward signals from internal widgets
+    selection_changed = pyqtSignal(object)
+    offset_x_changed = pyqtSignal(int)
+    offset_y_changed = pyqtSignal(int)
+
+    def __init__(self):
+        super().__init__()
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Display area (70% of space)
+        self.display = PreviewDisplay()
+        layout.addWidget(self.display, 70)
+
+        # Controls area (30% of space)
+        self.controls = PreviewControls()
+        layout.addWidget(self.controls, 30)
+
+        # Connect internal signals
+        self.display.selection_changed.connect(self._on_selection_changed)
+        self.controls.btn_clear_selection.clicked.connect(self.clear_selection)
+        self.controls.offset_x_slider.valueChanged.connect(self.offset_x_changed.emit)
+        self.controls.offset_y_slider.valueChanged.connect(self.offset_y_changed.emit)
+
+        # Create references for backward compatibility
+        self.btn_live = self.controls.btn_live
+        self.btn_capture = self.controls.btn_capture
+        self.btn_record = self.controls.btn_record
+        self.offset_x_slider = self.controls.offset_x_slider
+        self.offset_y_slider = self.controls.offset_y_slider
+        self.offset_x_value = self.controls.offset_x_value
+        self.offset_y_value = self.controls.offset_y_value
+
+        # These are needed by main.py
+        self.fps_value = self.controls.fps_value
+        self.rec_status = self.controls.rec_status
+        self.rec_frames = self.controls.rec_frames
+        self.rec_time = self.controls.rec_time
+        self.roi_value = self.controls.roi_value
+        self.sel_value = self.controls.sel_value
+
+        self.setLayout(layout)
+
+    # Public interface methods
     def show_frame(self, frame: np.ndarray):
-        """Display frame in preview or add to waterfall"""
-        if frame is None:
-            return
-
-        h, w = frame.shape[:2]
-        self.original_frame_size = (w, h)
-
-        if self.waterfall_mode and self.waterfall_buffer is not None:
-            # Collapse frame to profile
-            profile = np.median(frame, axis=0).astype(np.uint8)
-
-            # Apply deshear if enabled
-            if self.deshear_enabled and self.deshear_angle > 0:
-                from deshear_util import shift_row_linear
-                import math
-
-                # Assuming 1µm/line step size for simplicity
-                dy_um = 1.0
-                tan_theta = math.tan(math.radians(self.deshear_angle))
-                shift_px = self.waterfall_row * tan_theta * dy_um / self.deshear_px_um
-                profile = shift_row_linear(profile, shift_px)
-
-            # Check if buffer width matches frame width
-            if self.waterfall_buffer.shape[1] != len(profile):
-                # Reinitialize buffer with correct width
-                lines = self.waterfall_buffer.shape[0]
-                log.debug(
-                    f"Resizing waterfall buffer from {self.waterfall_buffer.shape[1]} to {len(profile)} width"
-                )
-                self.waterfall_buffer = np.full(
-                    (lines, len(profile)), 255, dtype=np.uint8
-                )
-                self.waterfall_row = 0
-
-            self.waterfall_buffer[self.waterfall_row, :] = profile
-            self.waterfall_row = (self.waterfall_row + 1) % self.waterfall_buffer.shape[
-                0
-            ]
-            self._update_display()
-        else:
-            # Normal ROI mode
-            if frame.dtype == np.uint16:
-                frame = (frame >> 8).astype(np.uint8)
-
-            if len(frame.shape) == 2:
-                if not frame.flags["C_CONTIGUOUS"]:
-                    frame = np.ascontiguousarray(frame)
-                img = QImage(frame.data, w, h, w, QImage.Format_Grayscale8)
-            else:
-                if not frame.flags["C_CONTIGUOUS"]:
-                    frame = np.ascontiguousarray(frame)
-                img = QImage(frame.data, w, h, w * 3, QImage.Format_RGB888)
-
-            pixmap = QPixmap.fromImage(img)
-            if pixmap.isNull():
-                log.error("Failed to create pixmap from frame")
-                return
-
-            self.current_pixmap = pixmap.scaled(
-                self.display.size(),
-                Qt.KeepAspectRatio,
-                Qt.FastTransformation,  # Use fast scaling for lower latency
-            )
-
-            self.image_rect = self._calculate_image_rect()
-            self._update_display()
-
-    def _calculate_image_rect(self) -> QRect:
-        """Calculate where the scaled image is positioned"""
-        if not self.current_pixmap and not self.waterfall_mode:
-            return QRect()
-
-        display_size = self.display.size()
-
-        if self.waterfall_mode and self.waterfall_buffer is not None:
-            # For waterfall, calculate based on buffer size
-            h, w = self.waterfall_buffer.shape
-            aspect = w / h
-            display_aspect = display_size.width() / display_size.height()
-
-            if aspect > display_aspect:
-                # Width limited
-                img_width = display_size.width()
-                img_height = int(img_width / aspect)
-            else:
-                # Height limited
-                img_height = display_size.height()
-                img_width = int(img_height * aspect)
-
-            x = (display_size.width() - img_width) // 2
-            y = (display_size.height() - img_height) // 2
-            return QRect(x, y, img_width, img_height)
-        elif self.current_pixmap:
-            img_size = self.current_pixmap.size()
-            x = (display_size.width() - img_size.width()) // 2
-            y = (display_size.height() - img_size.height()) // 2
-            return QRect(x, y, img_size.width(), img_size.height())
-
-        return QRect()
-
-    def _apply_transform(self, pixmap: QPixmap) -> QPixmap:
-        """Apply flip and rotation transforms to pixmap"""
-        if not self.flip_x and not self.flip_y and self.rotation == 0:
-            return pixmap
-
-        transform = QTransform()
-
-        # Apply rotation (only 0, 90, 180, 270 degrees)
-        if self.rotation != 0:
-            transform.rotate(self.rotation)
-
-        # Apply flips
-        if self.flip_x:
-            transform.scale(-1, 1)
-        if self.flip_y:
-            transform.scale(1, -1)
-
-        # Transform the pixmap
-        return pixmap.transformed(transform, Qt.FastTransformation)
-
-    def _update_display(self):
-        """Update display with current frame/waterfall and selection overlay"""
-        display_pixmap = QPixmap(self.display.size())
-        display_pixmap.fill(Qt.black)
-
-        painter = QPainter(display_pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        if self.waterfall_mode and self.waterfall_buffer is not None:
-            # Create waterfall display - only process visible portion
-            max_display_lines = min(self.display.height(), 500)  # Limit processing
-
-            # Get only the portion we'll display
-            if self.waterfall_buffer.shape[0] <= max_display_lines:
-                # Buffer smaller than display - use all
-                if self.waterfall_row == 0:
-                    view = self.waterfall_buffer
-                else:
-                    view = np.vstack(
-                        [
-                            self.waterfall_buffer[self.waterfall_row :, :],
-                            self.waterfall_buffer[: self.waterfall_row, :],
-                        ]
-                    )
-            else:
-                # Buffer larger - only process what we'll show
-                if self.waterfall_row == 0:
-                    view = self.waterfall_buffer[-max_display_lines:, :]
-                else:
-                    # Get the most recent lines only
-                    lines_to_show = min(
-                        max_display_lines, self.waterfall_buffer.shape[0]
-                    )
-                    if self.waterfall_row >= lines_to_show:
-                        view = self.waterfall_buffer[
-                            self.waterfall_row - lines_to_show : self.waterfall_row, :
-                        ]
-                    else:
-                        # Wrap around
-                        part1 = self.waterfall_buffer[
-                            self.waterfall_row - lines_to_show :, :
-                        ]
-                        part2 = self.waterfall_buffer[: self.waterfall_row, :]
-                        view = np.vstack([part1, part2])
-
-            h, w = view.shape
-            img = QImage(view.data, w, h, w, QImage.Format_Grayscale8)
-            pixmap = QPixmap.fromImage(img)
-
-            # Apply transforms
-            pixmap = self._apply_transform(pixmap)
-
-            # Scale to fit display
-            scaled = pixmap.scaled(
-                self.display.size(),
-                Qt.KeepAspectRatio,
-                Qt.FastTransformation,  # Use fast scaling for lower latency
-            )
-
-            self.image_rect = self._calculate_image_rect()
-            if self.image_rect:
-                painter.drawPixmap(self.image_rect, scaled)
-
-        elif self.current_pixmap:
-            # Apply transforms
-            transformed = self._apply_transform(self.current_pixmap)
-
-            if self.image_rect:
-                painter.drawPixmap(self.image_rect, transformed)
-
-        # Draw selection overlay (works for both modes)
-        if self.selection_rect or (
-            self.selecting and self.select_start and self.mouse_pos
-        ):
-            pen = QPen(QColor(0, 180, 255), 2, Qt.DashLine)
-            pen.setDashPattern([5, 3])
-            painter.setPen(pen)
-            painter.setBrush(QColor(0, 120, 255, 30))
-
-            if self.selection_rect:
-                painter.drawRect(self.selection_rect)
-                rect = self._map_to_frame_coords(self.selection_rect)
-                if rect.isValid():
-                    self.sel_value.setText(f" {rect.width()}x{rect.height()} ")
-            elif self.selecting:
-                temp_rect = QRect(self.select_start, self.mouse_pos).normalized()
-                painter.drawRect(temp_rect)
-
-        # Draw rulers
-        if (self.ruler_v or self.ruler_h or self.ruler_radial) and self.image_rect:
-            painter.setPen(QPen(QColor(255, 255, 0, 180), 1, Qt.SolidLine))
-
-            cx = self.image_rect.center().x()
-            cy = self.image_rect.center().y()
-
-            if self.ruler_v:
-                # Vertical lines - ensure minimum step of 1
-                step = max(1, self.image_rect.width() // 10)  # ADD max(1, ...)
-                for x in range(
-                    self.image_rect.left(), self.image_rect.right() + 1, step
-                ):
-                    painter.drawLine(
-                        x, self.image_rect.top(), x, self.image_rect.bottom()
-                    )
-                # Also draw center line
-                painter.drawLine(
-                    cx, self.image_rect.top(), cx, self.image_rect.bottom()
-                )
-
-            if self.ruler_h:
-                # Horizontal lines - ensure minimum step of 1
-                step = max(1, self.image_rect.height() // 10)  # ADD max(1, ...)
-                for y in range(
-                    self.image_rect.top(), self.image_rect.bottom() + 1, step
-                ):
-                    painter.drawLine(
-                        self.image_rect.left(), y, self.image_rect.right(), y
-                    )
-                # Also draw center line
-                painter.drawLine(
-                    self.image_rect.left(), cy, self.image_rect.right(), cy
-                )
-
-        if self.ruler_radial:
-            # Use smaller dimension as radius
-            radius = min(self.image_rect.width(), self.image_rect.height()) // 2
-
-            for angle in range(0, 360, 30):
-                radian = math.radians(angle)
-
-                # Simple calculation - no edge detection needed
-                x_end = cx + radius * math.cos(radian)
-                y_end = cy - radius * math.sin(radian)  # Negative for screen coords
-
-                painter.drawLine(cx, cy, int(x_end), int(y_end))
-
-                # Draw angle labels at 80% of radius
-                label_radius = radius * 0.8
-                x_label = cx + label_radius * math.cos(radian)
-                y_label = cy - label_radius * math.sin(radian)
-
-                label_text = f"{angle}°"
-                painter.setPen(QPen(QColor(0, 0, 0), 2))  # Black outline
-                painter.drawText(
-                    int(x_label - 15),
-                    int(y_label - 5),
-                    30,
-                    10,
-                    Qt.AlignCenter,
-                    label_text,
-                )
-                painter.setPen(QPen(QColor(255, 255, 0), 1))  # Yellow text
-                painter.drawText(
-                    int(x_label - 14),
-                    int(y_label - 6),
-                    28,
-                    10,
-                    Qt.AlignCenter,
-                    label_text,
-                )
-
-        # Add transform indicator if any transforms are active
-        if self.flip_x or self.flip_y or self.rotation != 0:
-            transform_text = []
-            if self.flip_x:
-                transform_text.append("FlipX")
-            if self.flip_y:
-                transform_text.append("FlipY")
-            if self.rotation != 0:
-                transform_text.append(f"Rot{self.rotation}°")
-
-            painter.setPen(QColor(255, 255, 0))
-            painter.drawText(10, 20, " ".join(transform_text) + " (preview only)")
-
-        if self.deshear_enabled and self.waterfall_mode:
-            painter.setPen(QColor(255, 255, 0))
-            painter.drawText(10, 40, f"DESHEAR {self.deshear_angle:.1f}°")
-
-        painter.end()
-        self.display.setPixmap(display_pixmap)
-
-    def get_waterfall_buffer(self) -> np.ndarray:
-        """Get current waterfall buffer for capture"""
-        if self.waterfall_mode and self.waterfall_buffer is not None:
-            if self.waterfall_row == 0:
-                return self.waterfall_buffer.copy()
-            else:
-                # Return buffer with most recent line at bottom
-                return np.vstack(
-                    [
-                        self.waterfall_buffer[self.waterfall_row :, :],
-                        self.waterfall_buffer[: self.waterfall_row, :],
-                    ]
-                )
-
-    def eventFilter(self, obj, event):
-        """Handle mouse events for selection"""
-        if obj != self.display:
-            return super().eventFilter(obj, event)
-
-        if event.type() == event.MouseMove:
-            self.mouse_pos = event.pos()
-            if self.selecting:
-                self._update_display()
-
-        elif event.type() == event.MouseButtonPress:
-            if event.button() == Qt.LeftButton:
-                self.select_start = event.pos()
-                self.selecting = True
-                self.selection_rect = None
-
-        elif event.type() == event.MouseButtonRelease:
-            if event.button() == Qt.LeftButton and self.selecting:
-                self.selecting = False
-                if (
-                    self.select_start
-                    and self.mouse_pos
-                    and self.select_start != self.mouse_pos
-                ):
-                    self.selection_rect = QRect(
-                        self.select_start, self.mouse_pos
-                    ).normalized()
-                    # Simple boundary check using display size
-                    display_rect = QRect(
-                        0, 0, self.display.width(), self.display.height()
-                    )
-                    self.selection_rect = self.selection_rect.intersected(display_rect)
-                    if (
-                        self.selection_rect.isValid()
-                        and self.selection_rect.width() > 5
-                        and self.selection_rect.height() > 5
-                    ):
-                        pixel_rect = self._map_to_frame_coords(self.selection_rect)
-                        self.selection_changed.emit(pixel_rect)
-                    else:
-                        self.clear_selection()
-                else:
-                    self.clear_selection()
-                self._update_display()
-
-        return super().eventFilter(obj, event)
-
-    def _map_to_frame_coords(self, display_rect: QRect) -> QRect:
-        """Map display coordinates to frame coordinates"""
-        if not self.original_frame_size:
-            return QRect()
-
-        # Use image_rect if available, otherwise use full display
-        if self.image_rect:
-            img_rect = self.image_rect
-        else:
-            # Estimate image rect based on display size
-            img_rect = QRect(0, 0, self.display.width(), self.display.height())
-
-        # Calculate relative position
-        rel_x = display_rect.x() - img_rect.x()
-        rel_y = display_rect.y() - img_rect.y()
-
-        # Calculate scale factors
-        if img_rect.width() > 0 and img_rect.height() > 0:
-            scale_x = self.original_frame_size[0] / img_rect.width()
-            scale_y = self.original_frame_size[1] / img_rect.height()
-        else:
-            scale_x = 1.0
-            scale_y = 1.0
-
-        frame_x = int(rel_x * scale_x)
-        frame_y = int(rel_y * scale_y)
-        frame_w = int(display_rect.width() * scale_x)
-        frame_h = int(display_rect.height() * scale_y)
-
-        return QRect(frame_x, frame_y, frame_w, frame_h)
-
-    def clear_selection(self):
-        """Clear the current selection"""
-        self.selection_rect = None
-        self.selecting = False
-        self.select_start = None
-        self.mouse_pos = None
-        self.sel_value.setText(" None ")
-        self.selection_changed.emit(None)
-        self._update_display()
-
-    def get_selection(self) -> QRect:
-        """Get current selection in frame coordinates"""
-        if self.selection_rect and self.selection_rect.isValid():
-            return self._map_to_frame_coords(self.selection_rect)
-        return QRect()
+        """Display frame with zero copy"""
+        self.display.setFrame(frame)
 
     def show_message(self, message: str):
-        """Show message in display area"""
-        self.display.setPixmap(QPixmap())
-        self.display.setText(message)
-        self.display.setAlignment(Qt.AlignCenter)
-        self.current_pixmap = None
-        #self.image_rect = None
-        self.original_frame_size = None
-        self.clear_selection()
+        """Show text message"""
+        self.display.showMessage(message)
+
+    def set_waterfall_mode(self, enabled: bool, width: int = 640, lines: int = 500):
+        """Configure waterfall mode"""
+        self.display.waterfall_mode = enabled
+        if enabled:
+            self.display.waterfall_buffer = np.full((lines, width), 255, dtype=np.uint8)
+            self.display.waterfall_row = 0
+            self.controls.setWaterfallMode(True)
+        else:
+            self.display.waterfall_buffer = None
+            self.display.waterfall_row = 0
+            self.controls.setWaterfallMode(False)
+
+    def set_transform(self, flip_x: bool, flip_y: bool, rotation: int):
+        """Set preview transform"""
+        self.display.flip_x = flip_x
+        self.display.flip_y = flip_y
+        self.display.rotation = rotation
+
+    def set_rulers(self, v: bool, h: bool, radial: bool):
+        """Set ruler display"""
+        self.display.ruler_v = v
+        self.display.ruler_h = h
+        self.display.ruler_radial = radial
+        self.display.update()
+
+    def set_deshear(self, enabled: bool, angle: float, px_um: float):
+        """Set deshear parameters"""
+        self.display.deshear_enabled = enabled
+        self.display.deshear_angle = angle
+        self.display.deshear_px_um = px_um
+
+    def update_status(self, **kwargs):
+        """Update status displays"""
+        self.controls.updateStatus(**kwargs)
+
+    def clear_selection(self):
+        """Clear selection"""
+        self.display.clearSelection()
+        self.controls.sel_value.setText(" None ")
+        self.selection_changed.emit(None)
+
+    def get_selection(self) -> QRect:
+        """Get current selection"""
+        return self.display.getSelection()
+
+    def get_waterfall_buffer(self) -> np.ndarray:
+        """Get waterfall buffer for capture"""
+        return self.display.getWaterfallBuffer()
+
+    def _on_selection_changed(self, rect):
+        """Handle selection change from display"""
+        if rect and rect.isValid():
+            self.controls.sel_value.setText(f" {rect.width()}x{rect.height()} ")
+        else:
+            self.controls.sel_value.setText(" None ")
+        self.selection_changed.emit(rect)
 
 
 class SettingsWidget(QWidget):
