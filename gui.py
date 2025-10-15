@@ -256,7 +256,13 @@ class PreviewDisplay(QWidget):
             if self.ruler_radial:
                 import math
 
-                radius = min(self.frame_rect.width(), self.frame_rect.height())
+                # Use maximum dimension for radius to reach corners
+                radius = int(
+                    math.sqrt(
+                        (self.frame_rect.width() / 2) ** 2
+                        + (self.frame_rect.height() / 2) ** 2
+                    )
+                )
 
                 for angle in range(0, 360, 30):
                     radian = math.radians(angle)
@@ -264,8 +270,8 @@ class PreviewDisplay(QWidget):
                     y_end = cy - radius * math.sin(radian)
                     painter.drawLine(cx, cy, int(x_end), int(y_end))
 
-                    # Labels
-                    label_radius = radius * 0.3
+                    # Labels at 45% of radius
+                    label_radius = radius * 0.45
                     x_label = cx + label_radius * math.cos(radian)
                     y_label = cy - label_radius * math.sin(radian)
 
@@ -288,24 +294,25 @@ class PreviewDisplay(QWidget):
                         Qt.AlignCenter,
                         label_text,
                     )
+                    # Draw transform indicators
+                    if self.flip_x or self.flip_y or self.rotation != 0:
+                        transform_text = []
+                        if self.flip_x:
+                            transform_text.append("FlipX")
+                        if self.flip_y:
+                            transform_text.append("FlipY")
+                        if self.rotation != 0:
+                            transform_text.append(f"Rot{self.rotation}°")
 
-        # Draw transform indicators
-        if self.flip_x or self.flip_y or self.rotation != 0:
-            transform_text = []
-            if self.flip_x:
-                transform_text.append("FlipX")
-            if self.flip_y:
-                transform_text.append("FlipY")
-            if self.rotation != 0:
-                transform_text.append(f"Rot{self.rotation}°")
+                        painter.setPen(QColor(255, 255, 0))
+                        painter.drawText(
+                            10, 20, " ".join(transform_text) + " (preview only)"
+                        )
 
-            painter.setPen(QColor(255, 255, 0))
-            painter.drawText(10, 20, " ".join(transform_text) + " (preview only)")
-
-        # Draw deshear indicator
-        if self.deshear_enabled and self.waterfall_mode:
-            painter.setPen(QColor(255, 255, 0))
-            painter.drawText(10, 40, f"DESHEAR {self.deshear_angle:.1f}°")
+                    # Draw deshear indicator
+                    if self.deshear_enabled and self.waterfall_mode:
+                        painter.setPen(QColor(255, 255, 0))
+                        painter.drawText(10, 40, f"DESHEAR {self.deshear_angle:.1f}°")
 
     # Keep all mouse event handlers and other methods unchanged
     def mousePressEvent(self, event):
@@ -702,13 +709,16 @@ class PreviewWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Display area (70% of space)
+        # Display area (takes all available space)
         self.display = PreviewDisplay()
-        layout.addWidget(self.display, 70)
+        self.display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        layout.addWidget(self.display)
 
-        # Controls area (30% of space)
+        # Controls area (fixed height, minimal space)
         self.controls = PreviewControls()
-        layout.addWidget(self.controls, 30)
+        self.controls.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.controls.setMaximumHeight(150)  # Fixed height for controls
+        layout.addWidget(self.controls)
 
         # Connect internal signals
         self.display.selection_changed.connect(self._on_selection_changed)
