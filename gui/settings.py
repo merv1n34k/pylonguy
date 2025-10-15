@@ -424,6 +424,12 @@ class SettingsWidget(QWidget):
         """Handle capture mode change"""
         is_waterfall = mode == "Waterfall"
 
+        if is_waterfall:
+            self.roi_height.setValue(1)
+            self.roi_height.setEnabled(False)  # Disable height control
+        else:
+            self.roi_height.setEnabled(True)  # Re-enable height control
+
         # Show/hide waterfall-specific settings
         self.waterfall_lines.setVisible(is_waterfall)
         self.waterfall_lines_label.setVisible(is_waterfall)

@@ -231,7 +231,17 @@ class PylonApp:
         """Display frame in preview"""
         if frame is not None:
             self.last_frame = frame
-            self.window.preview.show_frame(frame)
+
+            # Check if waterfall needs reinitialization
+            if not self.window.preview.show_frame(frame):
+                if self.waterfall_mode:
+                    log.debug("Reinitializing waterfall buffer due to width change")
+                    settings = self.window.settings.get_settings()
+                    # Get actual width from frame
+                    width = frame.shape[1] if len(frame.shape) == 2 else len(frame)
+                    self.window.preview.set_waterfall_mode(
+                        True, width, settings["capture"]["waterfall_lines"]
+                    )
 
             # Count frames for FPS estimation
             if self.fps_start_time is None:

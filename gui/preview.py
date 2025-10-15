@@ -66,21 +66,29 @@ class PreviewDisplay(QWidget):
         self.setPalette(pal)
 
     def setFrame(self, frame: np.ndarray):
-        """Zero-copy frame update - no caching"""
+        """Zero-copy frame update - returns False if buffer needs reinitialization"""
         if frame is None:
-            return
+            return True
 
         if self.waterfall_mode and self.waterfall_buffer is not None:
-            # Waterfall mode - frame is already a single line (height=1)
+            # Extract line from frame
             if len(frame.shape) == 2:
-                if frame.shape[0] == 1:
-                    # Single row frame - extract it
-                    line = frame[0, :].astype(np.uint8)
+                line = frame[0, :].astype(np.uint8)
+            elif len(frame.shape) == 1:
+                line = frame.astype(np.uint8)
             else:
-                # Already 1D array or unexpected shape
-                line = frame[: self.waterfall_buffer.shape[1]].astype(np.uint8)
+                return True
 
-            # Add to buffer directly (no deshearing in preview)
+            # Check if width changed - signal need for reinit
+            if len(line) != self.waterfall_buffer.shape[1]:
+                log.debug(
+                    f"Width mismatch: line={len(line)}, buffer={self.waterfall_buffer.shape[1]}"
+                )
+                self.waterfall_buffer = None
+                self.waterfall_row = 0
+                return False  # Signal reinit needed
+
+            # Add to buffer
             self.waterfall_buffer[self.waterfall_row] = line
             self.waterfall_row = (self.waterfall_row + 1) % self.waterfall_buffer.shape[
                 0
@@ -97,13 +105,14 @@ class PreviewDisplay(QWidget):
                     ]
                 )
         else:
-            # Normal mode - just store reference
+            # Normal mode
             if frame.dtype == np.uint16:
                 frame = (frame >> 8).astype(np.uint8)
             self.current_frame = frame
 
         self.message = ""
-        self.update()  # Trigger repaint
+        self.update()
+        return True
 
     def showMessage(self, text: str):
         """Show text message"""
@@ -745,7 +754,7 @@ class PreviewWidget(QWidget):
     # Public interface methods
     def show_frame(self, frame: np.ndarray):
         """Display frame with zero copy"""
-        self.display.setFrame(frame)
+        return self.display.setFrame(frame)
 
     def show_message(self, message: str):
         """Show text message"""
