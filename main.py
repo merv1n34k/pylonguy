@@ -273,18 +273,8 @@ class PylonApp:
         # Apply rotation
         if transform["rotation"] != 0:
             angle = transform["rotation"]
-            # Use OpenCV if available for rotation
-            try:
-                import cv2
-
-                h, w = result.shape[:2]
-                center = (w // 2, h // 2)
-                matrix = cv2.getRotationMatrix2D(center, -angle, 1.0)
-                result = cv2.warpAffine(result, matrix, (w, h))
-            except ImportError:
-                # Fallback to numpy rotation (90 degree increments only)
-                k = (angle % 360) // 90
-                result = np.rot90(result, k)
+            k = (angle % 360) // 90
+            result = np.rot90(result, k)
 
         return result
 
