@@ -219,15 +219,11 @@ class WaterfallWorker:
 
         try:
             # Collapse frame to 1×W profile using median
-            if len(frame.shape) == 2:
-                profile = np.median(frame, axis=0).astype(np.uint8)
-            else:
-                # For color, convert to grayscale first
-                gray = np.mean(frame, axis=2)
-                profile = np.median(gray, axis=0).astype(np.uint8)
+            if len(frame.shape) > 2:
+                frame = np.mean(frame, axis=2)
 
             # Add to buffer
-            self.buffer.append(profile)
+            self.buffer.append(frame)
             self.line_count += 1
 
             # Flush buffer if full
