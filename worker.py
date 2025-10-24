@@ -117,7 +117,9 @@ class VideoWorker:
         video_path = self.frames_dir.parent / f"vid_{timestamp}.avi"
 
         try:
-            log.info(f"Creating video from {len(frames)} frames at {self.fps} fps...")
+            log.info(
+                f"Creating video from {len(frames)} frames at {self.fps} fps (background)..."
+            )
 
             input_pattern = str(self.frames_dir / "%08d.raw")
 
@@ -142,21 +144,13 @@ class VideoWorker:
                 str(video_path),
             ]
 
-            result = subprocess.run(cmd, capture_output=True, timeout=300)
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            if result.returncode == 0:
-                size_mb = video_path.stat().st_size / (1024 * 1024)
-                log.info(f"Video created: {video_path} ({size_mb:.1f} MB)")
-                return str(video_path)
-            else:
-                log.error(f"FFmpeg failed: {result.stderr.decode()}")
-                return ""
+            log.info(f"Video processing started: {video_path}")
+            return str(video_path)
 
-        except subprocess.TimeoutExpired:
-            log.error("FFmpeg timed out after 5 minutes")
-            return ""
         except Exception as e:
-            log.error(f"Video creation failed: {e}")
+            log.error(f"Failed to start ffmpeg: {e}")
             return ""
 
 
