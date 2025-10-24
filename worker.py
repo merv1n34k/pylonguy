@@ -15,7 +15,7 @@ class VideoWorker:
     """Frame writer that dumps frames then creates video"""
 
     def __init__(self, frames_dir: str, width: int, height: int, fps: float):
-        # Frames directory path (full path passed from app.py)
+        # Frames directory path
         self.frames_dir = Path(frames_dir)
         self.width = width
         self.height = height
@@ -119,7 +119,6 @@ class VideoWorker:
         try:
             log.info(f"Creating video from {len(frames)} frames at {self.fps} fps...")
 
-            # Use pattern matching to read all numbered raw files
             input_pattern = str(self.frames_dir / "%08d.raw")
 
             # FFmpeg command using image2 demuxer for raw video frames

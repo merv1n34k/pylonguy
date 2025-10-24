@@ -13,7 +13,7 @@ class SettingsWidget(QWidget):
     """Settings panel with all controls"""
 
     settings_changed = pyqtSignal()
-    mode_changed = pyqtSignal(str)  # New signal for mode changes
+    mode_changed = pyqtSignal(str)
     transform_changed = pyqtSignal(bool, bool, int)  # flip_x, flip_y, rotation
     ruler_changed = pyqtSignal(bool, bool, bool)  # ruler v, h, radial
 
@@ -325,15 +325,16 @@ class SettingsWidget(QWidget):
         self.capture_mode.currentTextChanged.connect(self._on_mode_changed)
         capture_layout.addRow("Mode:", self.capture_mode)
 
-        # waterfall settings (initially hidden)
+        # Waterfall settings (initially hidden)
         self.waterfall_lines = QSpinBox()
         self.waterfall_lines.setRange(100, 2000)
-        self.waterfall_lines.setValue(500)  # Reduced from 2000 for better performance
+        self.waterfall_lines.setValue(500)
         self.waterfall_lines_label = QLabel("Buffer Lines:")
         capture_layout.addRow(self.waterfall_lines_label, self.waterfall_lines)
         self.waterfall_lines.setVisible(False)
         self.waterfall_lines_label.setVisible(False)
 
+        # Deshear settings
         self.deshear_enable = QCheckBox("Apply Deshear")
         self.deshear_enable.setVisible(False)
         capture_layout.addRow("", self.deshear_enable)
@@ -361,9 +362,9 @@ class SettingsWidget(QWidget):
         self.deshear_params_widget.setVisible(False)
         capture_layout.addRow("", self.deshear_params_widget)
 
-        # Connect deshear enable to show/hide params
         self.deshear_enable.toggled.connect(self.deshear_params_widget.setVisible)
 
+        # Capture settings
         self.output_path = QLineEdit("./output")
         self.image_prefix = QLineEdit("img")
         self.video_prefix = QLineEdit("vid")
@@ -587,7 +588,7 @@ class SettingsWidget(QWidget):
                 and self.throughput_enable.isEnabled(),
                 "throughput_limit": self.throughput_limit.value(),
             },
-            "capture": {  # Renamed from 'output'
+            "capture": {
                 "mode": self.capture_mode.currentText(),
                 "waterfall_lines": self.waterfall_lines.value(),
                 "path": self.output_path.text(),

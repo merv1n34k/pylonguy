@@ -44,10 +44,10 @@ class PylonApp:
         self._setup_logging()
         self._update_camera_list()
 
-        # Status update timer for FPS (faster updates for lower latency)
+        # Status update timer for FPS
         self.fps_timer = QTimer()
         self.fps_timer.timeout.connect(self._update_fps)
-        self.fps_timer.start(200)  # Update every 200ms instead of 500ms
+        self.fps_timer.start(200)
 
         log.info("Application started")
 
@@ -412,7 +412,7 @@ class PylonApp:
             if self.waterfall_mode:
                 self.camera.set_parameter("Height", 1)
                 self.window.settings.roi_height.setValue(1)
-                h_info = {"value": 1}  # Override for display
+                h_info = {"value": 1}
             else:
                 h_info = self.camera.get_parameter("Height")
 
