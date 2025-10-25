@@ -13,6 +13,7 @@ class SettingsWidget(QWidget):
     """Settings panel with all controls"""
 
     settings_changed = pyqtSignal()
+
     mode_changed = pyqtSignal(str)
     transform_changed = pyqtSignal(bool, bool, int)  # flip_x, flip_y, rotation
     ruler_changed = pyqtSignal(bool, bool, bool)  # ruler v, h, radial
@@ -408,9 +409,7 @@ class SettingsWidget(QWidget):
         layout.addWidget(capture_group)
 
         # Apply button
-        self.btn_apply = QPushButton("Apply Settings")
-        self.btn_apply.clicked.connect(self.settings_changed.emit)
-        layout.addWidget(self.btn_apply)
+        self._connect_settings()
 
         layout.addStretch()
         content.setLayout(layout)
@@ -421,15 +420,43 @@ class SettingsWidget(QWidget):
         main_layout.addWidget(scroll)
         self.setLayout(main_layout)
 
+    def _connect_settings(self):
+        """Connect only ROI, Acquisition, and Frame Rate controls"""
+        # ROI section
+        self.roi_width.valueChanged.connect(self.settings_changed.emit)
+        self.roi_height.valueChanged.connect(self.settings_changed.emit)
+        self.roi_offset_x.valueChanged.connect(self.settings_changed.emit)
+        self.roi_offset_y.valueChanged.connect(self.settings_changed.emit)
+        self.binning_horizontal.currentIndexChanged.connect(self.settings_changed.emit)
+        self.binning_vertical.currentIndexChanged.connect(self.settings_changed.emit)
+
+        # Acquisition section
+        self.exposure.valueChanged.connect(self.settings_changed.emit)
+        self.gain.valueChanged.connect(self.settings_changed.emit)
+        self.pixel_format.currentTextChanged.connect(self.settings_changed.emit)
+        self.sensor_mode.currentTextChanged.connect(self.settings_changed.emit)
+
+        # Frame Rate Control section
+        self.framerate_enable.toggled.connect(self.settings_changed.emit)
+        self.framerate.valueChanged.connect(self.settings_changed.emit)
+        self.throughput_enable.toggled.connect(self.settings_changed.emit)
+        self.throughput_limit.valueChanged.connect(self.settings_changed.emit)
+
+    def setLocked(self, locked: bool):
+        """Lock all controls during recording"""
+        self.setEnabled(not locked)
+
     def _on_mode_changed(self, mode: str):
         """Handle capture mode change"""
         is_waterfall = mode == "Waterfall"
 
         if is_waterfall:
+            self.roi_height.blockSignals(True)  # Block signal
             self.roi_height.setValue(1)
-            self.roi_height.setEnabled(False)  # Disable height control
+            self.roi_height.setEnabled(False)
         else:
-            self.roi_height.setEnabled(True)  # Re-enable height control
+            self.roi_height.setEnabled(True)
+            self.roi_height.blockSignals(False)
 
         # Show/hide waterfall-specific settings
         self.waterfall_lines.setVisible(is_waterfall)

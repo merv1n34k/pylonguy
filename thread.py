@@ -132,7 +132,7 @@ class CameraThread(QThread):
     def set_preview_enabled(self, enabled: bool):
         """Enable or disable preview"""
         self.preview_enabled = enabled
-        log.info(f"Preview: {'enabled' if enabled else 'disabled'}")
+        log.debug(f"Preview: {'enabled' if enabled else 'disabled'}")
 
     def _check_limits(self) -> bool:
         """Check if recording limits reached"""

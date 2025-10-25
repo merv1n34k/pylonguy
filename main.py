@@ -34,6 +34,7 @@ class PylonApp:
         self.gui_handler = None
         self.waterfall_mode = False
         self.saved_roi_height = None  # Store height when entering waterfall mode
+        self.timeout = 0.05
 
         # FPS estimation variables
         self.fps_frame_count = 0
@@ -56,13 +57,13 @@ class PylonApp:
         self.window.settings.btn_connect.clicked.connect(self.connect_camera)
         self.window.settings.btn_disconnect.clicked.connect(self.disconnect_camera)
         self.window.settings.btn_refresh.clicked.connect(self._update_camera_list)
-        self.window.settings.settings_changed.connect(self.apply_settings)
         self.window.settings.mode_changed.connect(self._on_mode_changed)
         self.window.settings.transform_changed.connect(self._on_transform_changed)
         self.window.settings.ruler_changed.connect(self._on_ruler_changed)
         self.window.settings.deshear_enable.toggled.connect(self._update_deshear)
         self.window.settings.deshear_angle.valueChanged.connect(self._update_deshear)
         self.window.settings.deshear_px_um.valueChanged.connect(self._update_deshear)
+        self.window.settings.settings_changed.connect(self.apply_camera_settings)
 
         self.window.preview.btn_live.clicked.connect(self.toggle_live)
         self.window.preview.btn_capture.clicked.connect(self.capture_frame)
@@ -155,12 +156,12 @@ class PylonApp:
                     if not self.thread.recording:
                         was_live = True
                         self.stop_live()
-                        time.sleep(0.1)
+                        time.sleep(self.timeout)
 
                 self.camera.set_parameter("Height", 1)
 
                 if was_live:
-                    time.sleep(0.1)
+                    time.sleep(self.timeout)
                     self.start_live()
 
         elif not entering_waterfall and self.waterfall_mode:
@@ -176,12 +177,12 @@ class PylonApp:
                         if not self.thread.recording:
                             was_live = True
                             self.stop_live()
-                            time.sleep(0.1)
+                            time.sleep(self.timeout)
 
                     self.camera.set_parameter("Height", self.saved_roi_height)
 
                     if was_live:
-                        time.sleep(0.1)
+                        time.sleep(self.timeout)
                         self.start_live()
 
                 self.saved_roi_height = None
@@ -298,7 +299,7 @@ class PylonApp:
         self.thread.start()
 
         self.window.preview.btn_live.setText("Stop Live")
-        log.info(
+        log.debug(
             "Live preview started"
             + (" (Waterfall mode)" if self.waterfall_mode else "")
         )
@@ -317,7 +318,7 @@ class PylonApp:
         self.window.preview.btn_live.setText("Start Live")
         self.window.preview.update_status(fps=0, recording=False, frames=0, elapsed=0)
         self.window.preview.show_message("No Camera")
-        log.info("Live preview stopped")
+        log.debug("Live preview stopped")
 
     def connect_camera(self):
         """Connect to camera with optional defaults"""
@@ -426,7 +427,7 @@ class PylonApp:
 
         log.info("Camera disconnected")
 
-    def apply_settings(self):
+    def apply_camera_settings(self):
         """Apply settings to camera"""
         if not self.camera.device:
             log.warning("Camera not connected")
@@ -440,7 +441,7 @@ class PylonApp:
                 return
             was_live = True
             self.stop_live()
-            time.sleep(0.1)
+            time.sleep(self.timeout)
 
         try:
             settings = self.window.settings.get_settings()
@@ -513,14 +514,14 @@ class PylonApp:
                     settings["capture"]["waterfall_lines"],
                 )
 
-            log.info("Settings applied")
+            log.debug("Camera settings applied")
 
         except Exception as e:
             log.error(f"Failed to apply settings: {e}")
 
         finally:
             if was_live:
-                time.sleep(0.1)
+                time.sleep(self.timeout)
                 self.start_live()
 
     def toggle_live(self):
@@ -616,6 +617,8 @@ class PylonApp:
 
         settings = self.window.settings.get_settings()
 
+        self.window.settings.setLocked(True)
+
         # Configure preview
         if settings["capture"]["preview_off"]:
             self.thread.set_preview_enabled(False)
@@ -677,6 +680,8 @@ class PylonApp:
         if self.thread:
             frames = self.thread.stop_recording()
             self.window.preview.btn_record.setText("Record")
+
+            self.window.settings.setLocked(False)
 
             # Re-enable preview
             self.thread.set_preview_enabled(True)
