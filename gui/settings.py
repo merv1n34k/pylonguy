@@ -12,7 +12,7 @@ log = logging.getLogger("pylonguy")
 class SettingsWidget(QWidget):
     """Settings panel with all controls"""
 
-    settings_changed = pyqtSignal()
+    camera_settings_changed = pyqtSignal()
 
     mode_changed = pyqtSignal(str)
     transform_changed = pyqtSignal(bool, bool, int)  # flip_x, flip_y, rotation
@@ -21,6 +21,7 @@ class SettingsWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.presets = {}
+        self._applying_preset = False
         self.init_ui()
         self.init_presets()
 
@@ -423,24 +424,29 @@ class SettingsWidget(QWidget):
     def _connect_settings(self):
         """Connect only ROI, Acquisition, and Frame Rate controls"""
         # ROI section
-        self.roi_width.valueChanged.connect(self.settings_changed.emit)
-        self.roi_height.valueChanged.connect(self.settings_changed.emit)
-        self.roi_offset_x.valueChanged.connect(self.settings_changed.emit)
-        self.roi_offset_y.valueChanged.connect(self.settings_changed.emit)
-        self.binning_horizontal.currentIndexChanged.connect(self.settings_changed.emit)
-        self.binning_vertical.currentIndexChanged.connect(self.settings_changed.emit)
+        self.roi_width.valueChanged.connect(self._emit_if_not_preset)
+        self.roi_height.valueChanged.connect(self._emit_if_not_preset)
+        self.roi_offset_x.valueChanged.connect(self._emit_if_not_preset)
+        self.roi_offset_y.valueChanged.connect(self._emit_if_not_preset)
+        self.binning_horizontal.currentIndexChanged.connect(self._emit_if_not_preset)
+        self.binning_vertical.currentIndexChanged.connect(self._emit_if_not_preset)
 
         # Acquisition section
-        self.exposure.valueChanged.connect(self.settings_changed.emit)
-        self.gain.valueChanged.connect(self.settings_changed.emit)
-        self.pixel_format.currentTextChanged.connect(self.settings_changed.emit)
-        self.sensor_mode.currentTextChanged.connect(self.settings_changed.emit)
+        self.exposure.valueChanged.connect(self._emit_if_not_preset)
+        self.gain.valueChanged.connect(self._emit_if_not_preset)
+        self.pixel_format.currentTextChanged.connect(self._emit_if_not_preset)
+        self.sensor_mode.currentTextChanged.connect(self._emit_if_not_preset)
 
         # Frame Rate Control section
-        self.framerate_enable.toggled.connect(self.settings_changed.emit)
-        self.framerate.valueChanged.connect(self.settings_changed.emit)
-        self.throughput_enable.toggled.connect(self.settings_changed.emit)
-        self.throughput_limit.valueChanged.connect(self.settings_changed.emit)
+        self.framerate_enable.toggled.connect(self._emit_if_not_preset)
+        self.framerate.valueChanged.connect(self._emit_if_not_preset)
+        self.throughput_enable.toggled.connect(self._emit_if_not_preset)
+        self.throughput_limit.valueChanged.connect(self._emit_if_not_preset)
+
+    def _emit_if_not_preset(self):
+        """Only emit if not applying preset"""
+        if not self._applying_preset:
+            self.camera_settings_changed.emit()
 
     def setLocked(self, locked: bool):
         """Lock all controls during recording"""
@@ -448,38 +454,7 @@ class SettingsWidget(QWidget):
 
     def _on_mode_changed(self, mode: str):
         """Handle capture mode change"""
-        is_waterfall = mode == "Waterfall"
-
-        if is_waterfall:
-            self.roi_height.blockSignals(True)  # Block signal
-            self.roi_height.setValue(1)
-            self.roi_height.setEnabled(False)
-        else:
-            self.roi_height.setEnabled(True)
-            self.roi_height.blockSignals(False)
-
-        # Show/hide waterfall-specific settings
-        self.waterfall_lines.setVisible(is_waterfall)
-        self.waterfall_lines_label.setVisible(is_waterfall)
-
-        self.deshear_enable.setVisible(is_waterfall)
-        if not is_waterfall:
-            self.deshear_params_widget.setVisible(False)
-        else:
-            self.deshear_params_widget.setVisible(self.deshear_enable.isChecked())
-
-        # Hide video FPS for waterfall mode
-        self.video_fps.setVisible(not is_waterfall)
-        self.video_fps_label.setVisible(not is_waterfall)
-
-        # Update frame limit label
-        if is_waterfall:
-            self.limit_frames_enable.setText("Limit lines")
-        else:
-            self.limit_frames_enable.setText("Limit frames")
-
         self.mode_changed.emit(mode)
-        log.info(f"Capture mode changed to: {mode}")
 
     def _on_transform_changed(self):
         """Handle transform settings change"""
@@ -501,11 +476,16 @@ class SettingsWidget(QWidget):
         """Apply selected preset"""
         preset_name = self.preset_combo.currentText()
         if preset_name in self.presets:
+            self._applying_preset = True
+
             preset = self.presets[preset_name]
             for param_name, value in preset.items():
                 self.set_parameter_value(param_name, value)
+
+            self._applying_preset = False
+
             log.info(f"Applied preset: {preset_name}")
-            self.settings_changed.emit()
+            self.camera_settings_changed.emit()
 
     def update_parameter_limits(
         self, param_name: str, min_val=None, max_val=None, inc=None, options=None

@@ -63,7 +63,7 @@ class PylonApp:
         self.window.settings.deshear_enable.toggled.connect(self._update_deshear)
         self.window.settings.deshear_angle.valueChanged.connect(self._update_deshear)
         self.window.settings.deshear_px_um.valueChanged.connect(self._update_deshear)
-        self.window.settings.settings_changed.connect(self.apply_camera_settings)
+        self.window.settings.camera_settings_changed.connect(self.apply_camera_settings)
 
         self.window.preview.btn_live.clicked.connect(self.toggle_live)
         self.window.preview.btn_capture.clicked.connect(self.capture_frame)
@@ -135,68 +135,64 @@ class PylonApp:
         log.info(f"Log level changed to {level_text}")
 
     def _on_mode_changed(self, mode: str):
-        """Handle capture mode change with ROI height management"""
+        """Handle capture mode change completely"""
         entering_waterfall = mode == "Waterfall"
 
-        # Handle ROI height saving/restoring
-        if entering_waterfall and not self.waterfall_mode:
-            # Entering waterfall mode - save current height and set to 1
-            current_height = self.window.settings.roi_height.value()
-            if current_height > 1:  # Only save if not already 1
-                self.saved_roi_height = current_height
-                log.debug(f"Saved ROI height: {self.saved_roi_height}")
-
-            # Set height to 1 for waterfall mode
-            self.window.settings.roi_height.setValue(1)
-
-            # Apply the height change to camera if connected
-            if self.camera.device:
-                was_live = False
-                if self.thread and self.thread.isRunning():
-                    if not self.thread.recording:
-                        was_live = True
-                        self.stop_live()
-                        time.sleep(self.timeout)
-
-                self.camera.set_parameter("Height", 1)
-
-                if was_live:
-                    time.sleep(self.timeout)
-                    self.start_live()
-
-        elif not entering_waterfall and self.waterfall_mode:
-            # Leaving waterfall mode - restore saved height
-            if self.saved_roi_height is not None:
-                self.window.settings.roi_height.setValue(self.saved_roi_height)
-                log.debug(f"Restored ROI height: {self.saved_roi_height}")
-
-                # Apply the restored height to camera if connected
-                if self.camera.device:
-                    was_live = False
-                    if self.thread and self.thread.isRunning():
-                        if not self.thread.recording:
-                            was_live = True
-                            self.stop_live()
-                            time.sleep(self.timeout)
-
-                    self.camera.set_parameter("Height", self.saved_roi_height)
-
-                    if was_live:
-                        time.sleep(self.timeout)
-                        self.start_live()
-
-                self.saved_roi_height = None
-
+        # Set mode flag first
         self.waterfall_mode = entering_waterfall
 
+        # Handle height locking
+        if entering_waterfall:
+            # Save current height if not already 1
+            current_height = self.window.settings.roi_height.value()
+            if current_height > 1:
+                self.saved_roi_height = current_height
+
+            # Set and lock height
+            self.window.settings.roi_height.blockSignals(True)
+            self.window.settings.roi_height.setValue(1)
+            self.window.settings.roi_height.setEnabled(False)
+        else:
+            # Restore height
+            self.window.settings.roi_height.setEnabled(True)
+            if hasattr(self, "saved_roi_height") and self.saved_roi_height:
+                self.window.settings.roi_height.setValue(self.saved_roi_height)
+                self.window.settings.roi_height.blockSignals(False)
+                self.saved_roi_height = None
+
+        # Update UI visibility
+        settings = self.window.settings
+        settings.waterfall_lines.setVisible(entering_waterfall)
+        settings.waterfall_lines_label.setVisible(entering_waterfall)
+        settings.deshear_enable.setVisible(entering_waterfall)
+        settings.deshear_params_widget.setVisible(
+            entering_waterfall and settings.deshear_enable.isChecked()
+        )
+        settings.video_fps.setVisible(not entering_waterfall)
+        settings.video_fps_label.setVisible(not entering_waterfall)
+
+        # Update labels
+        if entering_waterfall:
+            settings.limit_frames_enable.setText("Limit lines")
+        else:
+            settings.limit_frames_enable.setText("Limit frames")
+
         # Update preview widget
-        if self.waterfall_mode:
-            settings = self.window.settings.get_settings()
-            width = settings["roi"]["width"]
-            lines = settings["capture"]["waterfall_lines"]
-            self.window.preview.set_waterfall_mode(True, width, lines)
+        if entering_waterfall:
+            settings_dict = self.window.settings.get_settings()
+            self.window.preview.set_waterfall_mode(
+                True,
+                settings_dict["roi"]["width"],
+                settings_dict["capture"]["waterfall_lines"],
+            )
         else:
             self.window.preview.set_waterfall_mode(False)
+
+        # Apply camera settings if connected
+        if self.camera.device:
+            self.apply_camera_settings()
+
+        log.info(f"Mode changed to: {mode}")
 
     def _on_transform_changed(self, flip_x: bool, flip_y: bool, rotation: int):
         """Handle transform settings change"""
