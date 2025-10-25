@@ -1,6 +1,6 @@
 [project]
 name = "pylonguy"
-version = "1.2.0"
+version = "1.6.10"
 description = "PyQt5 wrapper for pypylon SDK for Basler camera manipulation, aimed for microfluidics and slow motion."
 readme = "README.md"
 license = "MIT"
