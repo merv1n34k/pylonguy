@@ -30,10 +30,10 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
-        # Left: preview (expandable)
+        # Left: preview
         layout.addWidget(self.preview, 3)
 
-        # Right: settings + log (fixed width)
+        # Right: settings + log
         right_widget = QWidget()
         right_widget.setFixedWidth(400)
         right_layout = QVBoxLayout()

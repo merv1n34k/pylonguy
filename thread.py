@@ -1,10 +1,12 @@
 """Thread module - camera acquisition thread with waterfall support"""
+
 from PyQt5.QtCore import QThread, pyqtSignal
 import numpy as np
 import time
 import logging
 
 log = logging.getLogger("pylonguy")
+
 
 class CameraThread(QThread):
     """Camera acquisition thread with waterfall support"""
@@ -39,7 +41,9 @@ class CameraThread(QThread):
         self.running = True
         self.last_stats_time = time.time()
 
-        log.debug(f"Thread - Acquisition thread started (waterfall_mode={self.waterfall_mode})")
+        log.debug(
+            f"Thread - Acquisition thread started (waterfall_mode={self.waterfall_mode})"
+        )
 
         self.camera.start_grabbing()
 
@@ -60,17 +64,18 @@ class CameraThread(QThread):
                                 break
 
                 if self.preview_enabled:
-                    # Emit frame directly without copy for lower latency
                     self.frame_ready.emit(frame)
 
-                # Update stats periodically (every 0.2 seconds for lower latency)
+                # Update stats periodically
                 current_time = time.time()
                 if current_time - self.last_stats_time >= 0.2:
                     self.last_stats_time = current_time
                     stats = {
-                        'recording': self.recording,
-                        'frames': self.frame_count if self.recording else 0,
-                        'elapsed': current_time - self.start_time if self.recording else 0
+                        "recording": self.recording,
+                        "frames": self.frame_count if self.recording else 0,
+                        "elapsed": current_time - self.start_time
+                        if self.recording
+                        else 0,
                     }
                     self.stats_update.emit(stats)
             else:
@@ -90,7 +95,9 @@ class CameraThread(QThread):
 
         if self.writer.start():
             self.recording = True
-            log.debug(f"Thread - Recording started ({'waterfall' if self.waterfall_mode else 'frames'})")
+            log.debug(
+                f"Thread - Recording started ({'waterfall' if self.waterfall_mode else 'frames'})"
+            )
             return True
 
         log.error("Failed to start writer")
@@ -110,7 +117,9 @@ class CameraThread(QThread):
                     log.info(f"Video saved: {result}")
             self.writer = None
 
-        log.debug(f"Thread - Recording stopped: {frames} {'lines' if self.waterfall_mode else 'frames'}")
+        log.debug(
+            f"Thread - Recording stopped: {frames} {'lines' if self.waterfall_mode else 'frames'}"
+        )
         return frames
 
     def stop(self):
@@ -123,12 +132,14 @@ class CameraThread(QThread):
     def set_preview_enabled(self, enabled: bool):
         """Enable or disable preview"""
         self.preview_enabled = enabled
-        log.info(f"Preview: {'enabled' if enabled else 'disabled'}")
+        log.debug(f"Preview: {'enabled' if enabled else 'disabled'}")
 
     def _check_limits(self) -> bool:
         """Check if recording limits reached"""
         if self.max_frames and self.frame_count >= self.max_frames:
-            log.debug(f"Thread - {'Line' if self.waterfall_mode else 'Frame'} limit reached: {self.max_frames}")
+            log.debug(
+                f"Thread - {'Line' if self.waterfall_mode else 'Frame'} limit reached: {self.max_frames}"
+            )
             return True
 
         if self.max_time:

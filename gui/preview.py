@@ -18,14 +18,14 @@ log = logging.getLogger("pylonguy")
 
 
 class PreviewDisplay(QWidget):
-    """Pure zero-copy frame display - real-time rendering, no caching"""
+    """Pure zero-copy frame display"""
 
     selection_changed = pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
 
-        # Frame data (zero-copy)
+        # Frame data
         self.current_frame = None  # numpy array reference only
 
         # Geometry
@@ -66,7 +66,7 @@ class PreviewDisplay(QWidget):
         self.setPalette(pal)
 
     def setFrame(self, frame: np.ndarray):
-        """Zero-copy frame update - returns False if buffer needs reinitialization"""
+        """Frame update - returns False if buffer needs reinitialization"""
         if frame is None:
             return True
 
@@ -79,7 +79,7 @@ class PreviewDisplay(QWidget):
             else:
                 return True
 
-            # Check if width changed - signal need for reinit
+            # Check if width changed
             if len(line) != self.waterfall_buffer.shape[1]:
                 log.debug(
                     f"Width mismatch: line={len(line)}, buffer={self.waterfall_buffer.shape[1]}"
@@ -121,7 +121,7 @@ class PreviewDisplay(QWidget):
         self.update()
 
     def paintEvent(self, event):
-        """Real-time painting - no caching"""
+        """Frame painting"""
         painter = QPainter(self)
 
         # Always clear background
@@ -138,7 +138,7 @@ class PreviewDisplay(QWidget):
 
         # Draw frame if available
         if self.current_frame is not None:
-            # Create QImage wrapper every time (no caching)
+            # Create QImage wrapper every time
             h, w = self.current_frame.shape[:2]
 
             if len(self.current_frame.shape) == 2:
@@ -320,7 +320,6 @@ class PreviewDisplay(QWidget):
                 10, 40, f"DESHEAR {self.deshear_angle:.1f}° (not shown in preview)"
             )
 
-    # Keep all mouse event handlers and other methods unchanged
     def mousePressEvent(self, event):
         """Start selection"""
         if event.button() == Qt.LeftButton:
@@ -715,15 +714,15 @@ class PreviewWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Display area (takes all available space)
+        # Display area
         self.display = PreviewDisplay()
         self.display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.display)
 
-        # Controls area (fixed height, minimal space)
+        # Controls area
         self.controls = PreviewControls()
         self.controls.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.controls.setMaximumHeight(150)  # Fixed height for controls
+        self.controls.setMaximumHeight(150)
         layout.addWidget(self.controls)
 
         # Connect internal signals

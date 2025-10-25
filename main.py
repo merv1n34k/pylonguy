@@ -34,6 +34,7 @@ class PylonApp:
         self.gui_handler = None
         self.waterfall_mode = False
         self.saved_roi_height = None  # Store height when entering waterfall mode
+        self.timeout = 0.05
 
         # FPS estimation variables
         self.fps_frame_count = 0
@@ -44,10 +45,10 @@ class PylonApp:
         self._setup_logging()
         self._update_camera_list()
 
-        # Status update timer for FPS (faster updates for lower latency)
+        # Status update timer for FPS
         self.fps_timer = QTimer()
         self.fps_timer.timeout.connect(self._update_fps)
-        self.fps_timer.start(200)  # Update every 200ms instead of 500ms
+        self.fps_timer.start(200)
 
         log.info("Application started")
 
@@ -56,13 +57,13 @@ class PylonApp:
         self.window.settings.btn_connect.clicked.connect(self.connect_camera)
         self.window.settings.btn_disconnect.clicked.connect(self.disconnect_camera)
         self.window.settings.btn_refresh.clicked.connect(self._update_camera_list)
-        self.window.settings.settings_changed.connect(self.apply_settings)
         self.window.settings.mode_changed.connect(self._on_mode_changed)
         self.window.settings.transform_changed.connect(self._on_transform_changed)
         self.window.settings.ruler_changed.connect(self._on_ruler_changed)
         self.window.settings.deshear_enable.toggled.connect(self._update_deshear)
         self.window.settings.deshear_angle.valueChanged.connect(self._update_deshear)
         self.window.settings.deshear_px_um.valueChanged.connect(self._update_deshear)
+        self.window.settings.camera_settings_changed.connect(self.apply_camera_settings)
 
         self.window.preview.btn_live.clicked.connect(self.toggle_live)
         self.window.preview.btn_capture.clicked.connect(self.capture_frame)
@@ -134,68 +135,64 @@ class PylonApp:
         log.info(f"Log level changed to {level_text}")
 
     def _on_mode_changed(self, mode: str):
-        """Handle capture mode change with ROI height management"""
+        """Handle capture mode change completely"""
         entering_waterfall = mode == "Waterfall"
 
-        # Handle ROI height saving/restoring
-        if entering_waterfall and not self.waterfall_mode:
-            # Entering waterfall mode - save current height and set to 1
-            current_height = self.window.settings.roi_height.value()
-            if current_height > 1:  # Only save if not already 1
-                self.saved_roi_height = current_height
-                log.debug(f"Saved ROI height: {self.saved_roi_height}")
-
-            # Set height to 1 for waterfall mode
-            self.window.settings.roi_height.setValue(1)
-
-            # Apply the height change to camera if connected
-            if self.camera.device:
-                was_live = False
-                if self.thread and self.thread.isRunning():
-                    if not self.thread.recording:
-                        was_live = True
-                        self.stop_live()
-                        time.sleep(0.1)
-
-                self.camera.set_parameter("Height", 1)
-
-                if was_live:
-                    time.sleep(0.1)
-                    self.start_live()
-
-        elif not entering_waterfall and self.waterfall_mode:
-            # Leaving waterfall mode - restore saved height
-            if self.saved_roi_height is not None:
-                self.window.settings.roi_height.setValue(self.saved_roi_height)
-                log.debug(f"Restored ROI height: {self.saved_roi_height}")
-
-                # Apply the restored height to camera if connected
-                if self.camera.device:
-                    was_live = False
-                    if self.thread and self.thread.isRunning():
-                        if not self.thread.recording:
-                            was_live = True
-                            self.stop_live()
-                            time.sleep(0.1)
-
-                    self.camera.set_parameter("Height", self.saved_roi_height)
-
-                    if was_live:
-                        time.sleep(0.1)
-                        self.start_live()
-
-                self.saved_roi_height = None
-
+        # Set mode flag first
         self.waterfall_mode = entering_waterfall
 
+        # Handle height locking
+        if entering_waterfall:
+            # Save current height if not already 1
+            current_height = self.window.settings.roi_height.value()
+            if current_height > 1:
+                self.saved_roi_height = current_height
+
+            # Set and lock height
+            self.window.settings.roi_height.blockSignals(True)
+            self.window.settings.roi_height.setValue(1)
+            self.window.settings.roi_height.setEnabled(False)
+        else:
+            # Restore height
+            self.window.settings.roi_height.setEnabled(True)
+            if hasattr(self, "saved_roi_height") and self.saved_roi_height:
+                self.window.settings.roi_height.setValue(self.saved_roi_height)
+                self.window.settings.roi_height.blockSignals(False)
+                self.saved_roi_height = None
+
+        # Update UI visibility
+        settings = self.window.settings
+        settings.waterfall_lines.setVisible(entering_waterfall)
+        settings.waterfall_lines_label.setVisible(entering_waterfall)
+        settings.deshear_enable.setVisible(entering_waterfall)
+        settings.deshear_params_widget.setVisible(
+            entering_waterfall and settings.deshear_enable.isChecked()
+        )
+        settings.video_fps.setVisible(not entering_waterfall)
+        settings.video_fps_label.setVisible(not entering_waterfall)
+
+        # Update labels
+        if entering_waterfall:
+            settings.limit_frames_enable.setText("Limit lines")
+        else:
+            settings.limit_frames_enable.setText("Limit frames")
+
         # Update preview widget
-        if self.waterfall_mode:
-            settings = self.window.settings.get_settings()
-            width = settings["roi"]["width"]
-            lines = settings["capture"]["waterfall_lines"]
-            self.window.preview.set_waterfall_mode(True, width, lines)
+        if entering_waterfall:
+            settings_dict = self.window.settings.get_settings()
+            self.window.preview.set_waterfall_mode(
+                True,
+                settings_dict["roi"]["width"],
+                settings_dict["capture"]["waterfall_lines"],
+            )
         else:
             self.window.preview.set_waterfall_mode(False)
+
+        # Apply camera settings if connected
+        if self.camera.device:
+            self.apply_camera_settings()
+
+        log.info(f"Mode changed to: {mode}")
 
     def _on_transform_changed(self, flip_x: bool, flip_y: bool, rotation: int):
         """Handle transform settings change"""
@@ -273,18 +270,8 @@ class PylonApp:
         # Apply rotation
         if transform["rotation"] != 0:
             angle = transform["rotation"]
-            # Use OpenCV if available for rotation
-            try:
-                import cv2
-
-                h, w = result.shape[:2]
-                center = (w // 2, h // 2)
-                matrix = cv2.getRotationMatrix2D(center, -angle, 1.0)
-                result = cv2.warpAffine(result, matrix, (w, h))
-            except ImportError:
-                # Fallback to numpy rotation (90 degree increments only)
-                k = (angle % 360) // 90
-                result = np.rot90(result, k)
+            k = (angle % 360) // 90
+            result = np.rot90(result, k)
 
         return result
 
@@ -308,7 +295,7 @@ class PylonApp:
         self.thread.start()
 
         self.window.preview.btn_live.setText("Stop Live")
-        log.info(
+        log.debug(
             "Live preview started"
             + (" (Waterfall mode)" if self.waterfall_mode else "")
         )
@@ -327,7 +314,7 @@ class PylonApp:
         self.window.preview.btn_live.setText("Start Live")
         self.window.preview.update_status(fps=0, recording=False, frames=0, elapsed=0)
         self.window.preview.show_message("No Camera")
-        log.info("Live preview stopped")
+        log.debug("Live preview stopped")
 
     def connect_camera(self):
         """Connect to camera with optional defaults"""
@@ -412,7 +399,7 @@ class PylonApp:
             if self.waterfall_mode:
                 self.camera.set_parameter("Height", 1)
                 self.window.settings.roi_height.setValue(1)
-                h_info = {"value": 1}  # Override for display
+                h_info = {"value": 1}
             else:
                 h_info = self.camera.get_parameter("Height")
 
@@ -436,7 +423,7 @@ class PylonApp:
 
         log.info("Camera disconnected")
 
-    def apply_settings(self):
+    def apply_camera_settings(self):
         """Apply settings to camera"""
         if not self.camera.device:
             log.warning("Camera not connected")
@@ -450,7 +437,7 @@ class PylonApp:
                 return
             was_live = True
             self.stop_live()
-            time.sleep(0.1)
+            time.sleep(self.timeout)
 
         try:
             settings = self.window.settings.get_settings()
@@ -523,14 +510,14 @@ class PylonApp:
                     settings["capture"]["waterfall_lines"],
                 )
 
-            log.info("Settings applied")
+            log.debug("Camera settings applied")
 
         except Exception as e:
             log.error(f"Failed to apply settings: {e}")
 
         finally:
             if was_live:
-                time.sleep(0.1)
+                time.sleep(self.timeout)
                 self.start_live()
 
     def toggle_live(self):
@@ -626,6 +613,8 @@ class PylonApp:
 
         settings = self.window.settings.get_settings()
 
+        self.window.settings.setLocked(True)
+
         # Configure preview
         if settings["capture"]["preview_off"]:
             self.thread.set_preview_enabled(False)
@@ -687,6 +676,8 @@ class PylonApp:
         if self.thread:
             frames = self.thread.stop_recording()
             self.window.preview.btn_record.setText("Record")
+
+            self.window.settings.setLocked(False)
 
             # Re-enable preview
             self.thread.set_preview_enabled(True)

@@ -15,7 +15,7 @@ class VideoWorker:
     """Frame writer that dumps frames then creates video"""
 
     def __init__(self, frames_dir: str, width: int, height: int, fps: float):
-        # Frames directory path (full path passed from app.py)
+        # Frames directory path
         self.frames_dir = Path(frames_dir)
         self.width = width
         self.height = height
@@ -117,9 +117,10 @@ class VideoWorker:
         video_path = self.frames_dir.parent / f"vid_{timestamp}.avi"
 
         try:
-            log.info(f"Creating video from {len(frames)} frames at {self.fps} fps...")
+            log.info(
+                f"Creating video from {len(frames)} frames at {self.fps} fps (background)..."
+            )
 
-            # Use pattern matching to read all numbered raw files
             input_pattern = str(self.frames_dir / "%08d.raw")
 
             # FFmpeg command using image2 demuxer for raw video frames
@@ -143,21 +144,13 @@ class VideoWorker:
                 str(video_path),
             ]
 
-            result = subprocess.run(cmd, capture_output=True, timeout=300)
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            if result.returncode == 0:
-                size_mb = video_path.stat().st_size / (1024 * 1024)
-                log.info(f"Video created: {video_path} ({size_mb:.1f} MB)")
-                return str(video_path)
-            else:
-                log.error(f"FFmpeg failed: {result.stderr.decode()}")
-                return ""
+            log.info(f"Video processing started: {video_path}")
+            return str(video_path)
 
-        except subprocess.TimeoutExpired:
-            log.error("FFmpeg timed out after 5 minutes")
-            return ""
         except Exception as e:
-            log.error(f"Video creation failed: {e}")
+            log.error(f"Failed to start ffmpeg: {e}")
             return ""
 
 
@@ -220,15 +213,11 @@ class WaterfallWorker:
 
         try:
             # Collapse frame to 1×W profile using median
-            if len(frame.shape) == 2:
-                profile = np.median(frame, axis=0).astype(np.uint8)
-            else:
-                # For color, convert to grayscale first
-                gray = np.mean(frame, axis=2)
-                profile = np.median(gray, axis=0).astype(np.uint8)
+            if len(frame.shape) > 2:
+                frame = np.mean(frame, axis=2)
 
             # Add to buffer
-            self.buffer.append(profile)
+            self.buffer.append(frame)
             self.line_count += 1
 
             # Flush buffer if full
