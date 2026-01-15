@@ -8,6 +8,7 @@ from pathlib import Path
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage, QTransform
+from PyQt5.QtGui import QIcon
 
 from camera import Camera
 from gui import MainWindow
@@ -729,7 +730,14 @@ class PylonApp:
 def main():
     """Main entry point"""
     app = QApplication(sys.argv)
+    app.setApplicationName("PylonGuy")
+    app.setApplicationDisplayName("PylonGuy")
     app.setStyle("Fusion")
+
+    # Set application icon
+    icon_path = Path(__file__).parent / "assets" / "icon.ico"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     pylon_app = PylonApp()
     pylon_app.run()
