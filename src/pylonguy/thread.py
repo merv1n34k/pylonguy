@@ -23,6 +23,7 @@ class CameraThread(QThread):
         self.waterfall_mode = waterfall_mode
         self._stop_event = Event()
         self._recording_event = Event()
+        self._frame_pending = Event()
         self.writer = None
 
         # Stats
@@ -64,7 +65,8 @@ class CameraThread(QThread):
                                 self.stop_recording()
                                 break
 
-                if self.preview_enabled:
+                if self.preview_enabled and not self._frame_pending.is_set():
+                    self._frame_pending.set()
                     self.frame_ready.emit(frame)
 
                 # Update stats periodically
@@ -140,6 +142,10 @@ class CameraThread(QThread):
         """Enable or disable preview"""
         self.preview_enabled = enabled
         log.debug(f"Preview: {'enabled' if enabled else 'disabled'}")
+
+    def frame_processed(self):
+        """Called by main thread after frame is displayed"""
+        self._frame_pending.clear()
 
     def _check_limits(self) -> bool:
         """Check if recording limits reached"""
