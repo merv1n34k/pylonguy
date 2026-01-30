@@ -30,29 +30,9 @@ class SettingsWidget(QWidget):
         self.presets = {}
         preset_file = Path("presets.json")
 
-        # Default presets
+        # Default presets (fallback if file doesn't exist)
         default_presets = {
-            "Quality": {
-                "Width": 1920,
-                "Height": 1080,
-                "BinningHorizontal": "1",
-                "BinningVertical": "1",
-                "ExposureTime": 1000,
-                "Gain": 0,
-                "PixelFormat": "Mono10p",
-                "SensorReadoutMode": "Normal",
-            },
-            "Speed": {
-                "Width": 320,
-                "Height": 240,
-                "BinningHorizontal": "1",
-                "BinningVertical": "1",
-                "ExposureTime": 100,
-                "Gain": 0,
-                "PixelFormat": "Mono8",
-                "SensorReadoutMode": "Fast",
-            },
-            "Balanced": {
+            "Default": {
                 "Width": 640,
                 "Height": 480,
                 "BinningHorizontal": "1",
@@ -60,7 +40,37 @@ class SettingsWidget(QWidget):
                 "ExposureTime": 500,
                 "Gain": 0,
                 "PixelFormat": "Mono8",
+                "SensorReadoutMode": "Fast",
+            },
+            "HighSpeed": {
+                "Width": 256,
+                "Height": 128,
+                "BinningHorizontal": "1",
+                "BinningVertical": "1",
+                "ExposureTime": 50,
+                "Gain": 5,
+                "PixelFormat": "Mono8",
+                "SensorReadoutMode": "Fast",
+            },
+            "FullFrame": {
+                "Width": 1920,
+                "Height": 1080,
+                "BinningHorizontal": "1",
+                "BinningVertical": "1",
+                "ExposureTime": 5000,
+                "Gain": 0,
+                "PixelFormat": "Mono10p",
                 "SensorReadoutMode": "Normal",
+            },
+            "Microfluidics": {
+                "Width": 512,
+                "Height": 256,
+                "BinningHorizontal": "1",
+                "BinningVertical": "1",
+                "ExposureTime": 200,
+                "Gain": 2,
+                "PixelFormat": "Mono8",
+                "SensorReadoutMode": "Fast",
             },
         }
 
@@ -76,8 +86,12 @@ class SettingsWidget(QWidget):
             self.presets = default_presets
             self._save_presets_to_file()
 
+        # Add presets to combo, ensuring "Default" is first
+        if "Default" in self.presets:
+            self.preset_combo.addItem("Default")
         for preset in self.presets.keys():
-            self.preset_combo.addItem(preset)
+            if preset != "Default":
+                self.preset_combo.addItem(preset)
 
     def _save_presets_to_file(self):
         """Save all presets to JSON file"""
@@ -150,9 +164,9 @@ class SettingsWidget(QWidget):
         select_layout.addWidget(self.camera_combo, 1)
         self.btn_refresh = QPushButton("Refresh")
         select_layout.addWidget(self.btn_refresh)
-        self.load_defaults_check = QCheckBox("Defaults")
-        self.load_defaults_check.setChecked(True)
-        select_layout.addWidget(self.load_defaults_check)
+        self.auto_apply_check = QCheckBox("Auto-apply")
+        self.auto_apply_check.setChecked(True)
+        select_layout.addWidget(self.auto_apply_check)
 
         # Second row: Connect and Disconnect buttons
         button_layout = QHBoxLayout()

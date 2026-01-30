@@ -332,9 +332,7 @@ class PylonApp:
             log.error("No camera selected")
             return
 
-        apply_defaults = self.window.settings.load_defaults_check.isChecked()
-
-        if self.camera.open(camera_index, apply_defaults):
+        if self.camera.open(camera_index, apply_defaults=True):
             # Update GUI parameter limits from camera
             params_to_update = [
                 "Width",
@@ -401,6 +399,11 @@ class PylonApp:
 
             self.window.settings.btn_connect.setEnabled(False)
             self.window.settings.btn_disconnect.setEnabled(True)
+
+            # Auto-apply selected preset if checkbox is ticked
+            if self.window.settings.auto_apply_check.isChecked():
+                self.window.settings.apply_preset()
+                self.apply_camera_settings()
 
             if self.waterfall_mode:
                 self.camera.set_parameter("Height", 1)
