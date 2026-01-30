@@ -47,7 +47,8 @@ class CameraThread(QThread):
             f"Thread - Acquisition thread started (waterfall_mode={self.waterfall_mode})"
         )
 
-        self.camera.start_grabbing()
+        # Start with LatestImageOnly for lag-free preview
+        self.camera.start_grabbing(latest_only=True)
 
         while not self._stop_event.is_set():
             frame = self.camera.grab_frame()
@@ -98,6 +99,10 @@ class CameraThread(QThread):
         self.start_time = time.time()
 
         if self.writer.start():
+            # Switch to OneByOne strategy to preserve all frames
+            self.camera.stop_grabbing()
+            self.camera.start_grabbing(latest_only=False)
+
             self._recording_event.set()
             log.debug(
                 f"Thread - Recording started ({'waterfall' if self.waterfall_mode else 'frames'})"
@@ -120,6 +125,11 @@ class CameraThread(QThread):
                 else:
                     log.info(f"Video saved: {result}")
             self.writer = None
+
+        # Switch back to LatestImageOnly for lag-free preview
+        if not self._stop_event.is_set():
+            self.camera.stop_grabbing()
+            self.camera.start_grabbing(latest_only=True)
 
         log.debug(
             f"Thread - Recording stopped: {frames} {'lines' if self.waterfall_mode else 'frames'}"

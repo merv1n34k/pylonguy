@@ -180,15 +180,25 @@ class Camera:
             log.error(f"Could not get settings: {e}")
         return result
 
-    def start_grabbing(self):
-        """Start continuous frame acquisition"""
+    def start_grabbing(self, latest_only: bool = True):
+        """Start continuous frame acquisition
+
+        Args:
+            latest_only: If True, use LatestImageOnly strategy (better for preview).
+                        If False, use OneByOne strategy (preserves all frames for recording).
+        """
         if not self.device or self._is_grabbing:
             return
 
         try:
-            self.device.StartGrabbing(pylon.GrabStrategy_OneByOne)
+            strategy = (
+                pylon.GrabStrategy_LatestImageOnly
+                if latest_only
+                else pylon.GrabStrategy_OneByOne
+            )
+            self.device.StartGrabbing(strategy)
             self._is_grabbing = True
-            log.debug("Camera - Started grabbing")
+            log.debug(f"Camera - Started grabbing (latest_only={latest_only})")
         except Exception as e:
             log.error(f"Failed to start grabbing: {e}")
             self._is_grabbing = False
