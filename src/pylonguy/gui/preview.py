@@ -50,11 +50,6 @@ class PreviewDisplay(QWidget):
         self.ruler_h = False
         self.ruler_radial = False
 
-        # Deshear parameters
-        self.deshear_enabled = False
-        self.deshear_angle = 0
-        self.deshear_px_um = 3.8
-
         # Message display
         self.message = ""
 
@@ -313,12 +308,6 @@ class PreviewDisplay(QWidget):
                 transform_text.append(f"Rot{self.rotation}°")
             painter.setPen(QColor(255, 255, 0))
             painter.drawText(10, 20, " ".join(transform_text) + " (preview only)")
-
-        if self.deshear_enabled and self.waterfall_mode:
-            painter.setPen(QColor(255, 255, 0))
-            painter.drawText(
-                10, 40, f"DESHEAR {self.deshear_angle:.1f}° (not shown in preview)"
-            )
 
     def mousePressEvent(self, event):
         """Start selection"""
@@ -783,12 +772,6 @@ class PreviewWidget(QWidget):
         self.display.ruler_h = h
         self.display.ruler_radial = radial
         self.display.update()
-
-    def set_deshear(self, enabled: bool, angle: float, px_um: float):
-        """Set deshear parameters"""
-        self.display.deshear_enabled = enabled
-        self.display.deshear_angle = angle
-        self.display.deshear_px_um = px_um
 
     def update_status(self, **kwargs):
         """Update status displays"""

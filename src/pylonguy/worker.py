@@ -164,12 +164,10 @@ class WaterfallWorker:
         output_path: str,
         width: int,
         buffer_size: int = 1000,
-        deshear_angle: float = 0,
     ):
         self.output_path = Path(output_path)
         self.width = width
         self.buffer_size = buffer_size
-        self.deshear_angle = deshear_angle
 
         # Buffer for batched writes
         self.buffer = []
@@ -186,16 +184,8 @@ class WaterfallWorker:
             # Open file in write binary mode
             self.file = open(self.output_path, "wb")
 
-            # Write header with optional DSR extension
-            if self.deshear_angle > 0:
-                # Extended header: 'WTFDSR' + width (2 bytes) + angle_byte
-                header = b"WTFDSR" + self.width.to_bytes(2, "little")
-                angle_byte = int((self.deshear_angle / 90.0) * 255)
-                header += angle_byte.to_bytes(1, "unsigned")
-            else:
-                # Standard header: 'WTF1' + width (2 bytes)
-                header = b"WTF1" + self.width.to_bytes(2, "little")
-
+            # Write header: 'WTF1' + width (2 bytes)
+            header = b"WTF1" + self.width.to_bytes(2, "little")
             self.file.write(header)
 
             self.active = True

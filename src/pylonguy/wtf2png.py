@@ -16,13 +16,12 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 import sys
-from .deshear_util import deshear_array
 
 
 def read_waterfall_file(file_path: Path):
     """
     Read .wtf or .kmg file with embedded header and return as numpy array
-    Supports both WTF1 and KMG1 headers for backward compatibility
+    Supports WTF1, WTFDSR (legacy), and KMG1 headers for backward compatibility
     """
     with open(file_path, "rb") as f:
         # Read header
@@ -32,18 +31,13 @@ def read_waterfall_file(file_path: Path):
             raise ValueError("Invalid file")
 
         magic = header[:4]
-        deshear_angle = 0
 
-        if magic == b"WTFD":  # Check for WTFDSR
-            # Read full extended header
+        if magic == b"WTFD":  # Legacy WTFDSR format
             f.seek(0)
             header = f.read(9)
             if header[:6] == b"WTFDSR":
-                file_type = "waterfall (with deshear)"
+                file_type = "waterfall (legacy deshear format)"
                 width = int.from_bytes(header[6:8], "little")
-                angle_byte = header[8]
-                deshear_angle = (angle_byte / 255.0) * 90.0
-                print(f"Deshear angle detected: {deshear_angle:.1f}°")
             else:
                 raise ValueError("Invalid WTFDSR header")
         elif magic == b"WTF1":
@@ -71,7 +65,7 @@ def read_waterfall_file(file_path: Path):
 
     print(f"Loaded {file_type}: {lines} lines × {width} pixels")
 
-    return array, deshear_angle
+    return array
 
 
 def save_png(array: np.ndarray, output_path: Path):
@@ -85,7 +79,6 @@ def convert_file(
     input_path: Path,
     output_path: Path = None,
     max_lines: int = None,
-    force_deshear: float = None,
 ):
     """Convert a single .wtf or .kmg file to PNG(s)"""
     if not input_path.exists():
@@ -94,18 +87,8 @@ def convert_file(
 
     try:
         # Read waterfall/kymograph
-        array, auto_deshear = read_waterfall_file(input_path)
+        array = read_waterfall_file(input_path)
         total_lines = array.shape[0]
-
-        # Apply deshearing if needed
-        if force_deshear is not None and force_deshear > 0:
-            print(f"Applying forced deshear: {force_deshear}°")
-            # Default values for missing parameters
-            array = deshear_array(array, force_deshear, px_um=3.8, dy_um=1.0)
-        elif auto_deshear > 0:
-            print(f"Auto-applying deshear from header: {auto_deshear:.1f}°")
-
-            array = deshear_array(array, auto_deshear, px_um=3.8, dy_um=1.0)
 
         # If no line limit specified, save as single file
         if max_lines is None or total_lines <= max_lines:
@@ -152,9 +135,6 @@ def main():
     parser.add_argument(
         "--lines", "-l", type=int, help="Max lines per PNG (splits into multiple files)"
     )
-    parser.add_argument(
-        "--deshear", "-d", type=float, help="Force deshear angle in degrees (0-90)"
-    )
 
     args = parser.parse_args()
 
@@ -182,9 +162,7 @@ def main():
     # Convert single file with specified output
     if len(input_files) == 1 and args.output and not args.lines:
         # Single file, output specified, no splitting
-        convert_file(
-            input_files[0], Path(args.output), args.lines, force_deshear=args.deshear
-        )
+        convert_file(input_files[0], Path(args.output), args.lines)
     else:
         # Multiple files or splitting mode
         if args.output and len(input_files) > 1:
@@ -193,7 +171,7 @@ def main():
         for input_file in input_files:
             if input_file.suffix.lower() in [".wtf", ".kmg"]:
                 print(f"\nConverting: {input_file}")
-                convert_file(input_file, None, args.lines, force_deshear=args.deshear)
+                convert_file(input_file, None, args.lines)
 
 
 if __name__ == "__main__":

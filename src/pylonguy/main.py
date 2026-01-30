@@ -71,9 +71,6 @@ class PylonApp:
         self.window.settings.mode_changed.connect(self._on_mode_changed)
         self.window.settings.transform_changed.connect(self._on_transform_changed)
         self.window.settings.ruler_changed.connect(self._on_ruler_changed)
-        self.window.settings.deshear_enable.toggled.connect(self._update_deshear)
-        self.window.settings.deshear_angle.valueChanged.connect(self._update_deshear)
-        self.window.settings.deshear_px_um.valueChanged.connect(self._update_deshear)
         self.window.settings.camera_settings_changed.connect(self.apply_camera_settings)
 
         self.window.preview.btn_live.clicked.connect(self.toggle_live)
@@ -102,15 +99,6 @@ class PylonApp:
         else:
             self.window.settings.camera_combo.addItem("No cameras detected")
         log.info(f"Camera list refreshed: {len(cameras)} camera(s) found")
-
-    def _update_deshear(self):
-        """Update deshear settings in preview"""
-        settings = self.window.settings.get_settings()
-        self.window.preview.set_deshear(
-            settings["capture"]["deshear_enabled"],
-            settings["capture"]["deshear_angle"],
-            settings["capture"]["deshear_px_um"],
-        )
 
     def _setup_logging(self):
         """Route logging to GUI"""
@@ -175,10 +163,6 @@ class PylonApp:
         settings = self.window.settings
         settings.waterfall_lines.setVisible(entering_waterfall)
         settings.waterfall_lines_label.setVisible(entering_waterfall)
-        settings.deshear_enable.setVisible(entering_waterfall)
-        settings.deshear_params_widget.setVisible(
-            entering_waterfall and settings.deshear_enable.isChecked()
-        )
         settings.video_fps.setVisible(not entering_waterfall)
         settings.video_fps_label.setVisible(not entering_waterfall)
 
@@ -658,13 +642,7 @@ class PylonApp:
                 base_path / f"{settings['capture']['video_prefix']}_{timestamp}.wtf"
             )
 
-            deshear_angle = 0
-            if settings["capture"]["deshear_enabled"]:
-                deshear_angle = settings["capture"]["deshear_angle"]
-
-            worker = WaterfallWorker(
-                str(waterfall_path), w, deshear_angle=deshear_angle
-            )
+            worker = WaterfallWorker(str(waterfall_path), w)
         else:
             # Create unique frames subdirectory for video
             timestamp = time.strftime("%Y%m%d_%H%M%S_%f")[:-3]

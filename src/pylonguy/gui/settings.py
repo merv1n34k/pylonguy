@@ -350,36 +350,6 @@ class SettingsWidget(QWidget):
         self.waterfall_lines.setVisible(False)
         self.waterfall_lines_label.setVisible(False)
 
-        # Deshear settings
-        self.deshear_enable = QCheckBox("Apply Deshear")
-        self.deshear_enable.setVisible(False)
-        capture_layout.addRow("", self.deshear_enable)
-
-        deshear_params_layout = QHBoxLayout()
-        self.deshear_angle = QDoubleSpinBox()
-        self.deshear_angle.setRange(0, 90)
-        self.deshear_angle.setValue(0)
-        self.deshear_angle.setSuffix("°")
-
-        self.deshear_px_um = QDoubleSpinBox()
-        self.deshear_px_um.setRange(0.1, 100)
-        self.deshear_px_um.setValue(3.8)
-        self.deshear_px_um.setSuffix(" µm/px")
-        self.deshear_px_um.setDecimals(2)
-
-        deshear_params_layout.addWidget(QLabel("Angle:"))
-        deshear_params_layout.addWidget(self.deshear_angle)
-        deshear_params_layout.addWidget(QLabel("Scale:"))
-        deshear_params_layout.addWidget(self.deshear_px_um)
-        deshear_params_layout.addStretch()
-
-        self.deshear_params_widget = QWidget()
-        self.deshear_params_widget.setLayout(deshear_params_layout)
-        self.deshear_params_widget.setVisible(False)
-        capture_layout.addRow("", self.deshear_params_widget)
-
-        self.deshear_enable.toggled.connect(self.deshear_params_widget.setVisible)
-
         # Capture settings
         self.output_path = QLineEdit("./output")
         self.image_prefix = QLineEdit("img")
@@ -623,11 +593,6 @@ class SettingsWidget(QWidget):
                 "limit_time": self.limit_time.value()
                 if self.limit_time_enable.isChecked()
                 else None,
-                "deshear_enabled": self.deshear_enable.isChecked()
-                if self.deshear_enable.isVisible()
-                else False,
-                "deshear_angle": self.deshear_angle.value(),
-                "deshear_px_um": self.deshear_px_um.value(),
             },
             "transform": {
                 "flip_x": self.flip_x_check.isChecked(),
