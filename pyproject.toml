@@ -11,3 +11,13 @@ dependencies = [
     "pypylon>=4.2.0",
     "pyqt5>=5.15.11",
 ]
+
+[project.scripts]
+pylonguy = "pylonguy.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pylonguy"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"assets" = "pylonguy/assets"
+"presets.json" = "pylonguy/presets.json"
