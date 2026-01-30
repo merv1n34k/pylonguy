@@ -36,7 +36,6 @@ class PylonApp:
         self.current_selection = None
         self.gui_handler = None
         self.waterfall_mode = False
-        self.saved_roi_height = None  # Store height when entering waterfall mode
         self.timeout = 0.05
         self.missing_deps = missing_deps or []
 
@@ -140,25 +139,6 @@ class PylonApp:
         # Set mode flag first
         self.waterfall_mode = entering_waterfall
 
-        # Handle height locking
-        if entering_waterfall:
-            # Save current height if not already 1
-            current_height = self.window.settings.roi_height.value()
-            if current_height > 1:
-                self.saved_roi_height = current_height
-
-            # Set and lock height
-            self.window.settings.roi_height.blockSignals(True)
-            self.window.settings.roi_height.setValue(1)
-            self.window.settings.roi_height.setEnabled(False)
-        else:
-            # Restore height
-            self.window.settings.roi_height.setEnabled(True)
-            if hasattr(self, "saved_roi_height") and self.saved_roi_height:
-                self.window.settings.roi_height.setValue(self.saved_roi_height)
-                self.window.settings.roi_height.blockSignals(False)
-                self.saved_roi_height = None
-
         # Update UI visibility
         settings = self.window.settings
         settings.video_fps.setVisible(not entering_waterfall)
@@ -173,12 +153,11 @@ class PylonApp:
         # Update preview widget
         if entering_waterfall:
             settings_dict = self.window.settings.get_settings()
-            # Use saved ROI height as waterfall buffer length
-            buffer_lines = self.saved_roi_height or settings_dict["roi"]["height"]
+            # In waterfall mode, height setting = buffer lines
             self.window.preview.set_waterfall_mode(
                 True,
                 settings_dict["roi"]["width"],
-                buffer_lines,
+                settings_dict["roi"]["height"],
             )
         else:
             self.window.preview.set_waterfall_mode(False)
@@ -231,8 +210,9 @@ class PylonApp:
                     settings = self.window.settings.get_settings()
                     # Get actual width from frame
                     width = frame.shape[1] if len(frame.shape) == 2 else len(frame)
-                    buffer_lines = self.saved_roi_height or settings["roi"]["height"]
-                    self.window.preview.set_waterfall_mode(True, width, buffer_lines)
+                    self.window.preview.set_waterfall_mode(
+                        True, width, settings["roi"]["height"]
+                    )
 
             # Count frames for FPS estimation
             if self.fps_start_time is None:
@@ -505,11 +485,10 @@ class PylonApp:
 
             # Update waterfall buffer if in waterfall mode
             if self.waterfall_mode:
-                buffer_lines = self.saved_roi_height or settings["roi"]["height"]
                 self.window.preview.set_waterfall_mode(
                     True,
                     settings["roi"]["width"],
-                    buffer_lines,
+                    settings["roi"]["height"],
                 )
 
             log.debug("Camera settings applied")
