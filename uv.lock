@@ -133,7 +133,7 @@ wheels = [
 
 [[package]]
 name = "pylonguy"
-version = "1.6.11"
+version = "1.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
