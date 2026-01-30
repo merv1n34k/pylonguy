@@ -161,8 +161,6 @@ class PylonApp:
 
         # Update UI visibility
         settings = self.window.settings
-        settings.waterfall_lines.setVisible(entering_waterfall)
-        settings.waterfall_lines_label.setVisible(entering_waterfall)
         settings.video_fps.setVisible(not entering_waterfall)
         settings.video_fps_label.setVisible(not entering_waterfall)
 
@@ -175,10 +173,12 @@ class PylonApp:
         # Update preview widget
         if entering_waterfall:
             settings_dict = self.window.settings.get_settings()
+            # Use saved ROI height as waterfall buffer length
+            buffer_lines = self.saved_roi_height or settings_dict["roi"]["height"]
             self.window.preview.set_waterfall_mode(
                 True,
                 settings_dict["roi"]["width"],
-                settings_dict["capture"]["waterfall_lines"],
+                buffer_lines,
             )
         else:
             self.window.preview.set_waterfall_mode(False)
@@ -231,9 +231,8 @@ class PylonApp:
                     settings = self.window.settings.get_settings()
                     # Get actual width from frame
                     width = frame.shape[1] if len(frame.shape) == 2 else len(frame)
-                    self.window.preview.set_waterfall_mode(
-                        True, width, settings["capture"]["waterfall_lines"]
-                    )
+                    buffer_lines = self.saved_roi_height or settings["roi"]["height"]
+                    self.window.preview.set_waterfall_mode(True, width, buffer_lines)
 
             # Count frames for FPS estimation
             if self.fps_start_time is None:
@@ -506,10 +505,11 @@ class PylonApp:
 
             # Update waterfall buffer if in waterfall mode
             if self.waterfall_mode:
+                buffer_lines = self.saved_roi_height or settings["roi"]["height"]
                 self.window.preview.set_waterfall_mode(
                     True,
                     settings["roi"]["width"],
-                    settings["capture"]["waterfall_lines"],
+                    buffer_lines,
                 )
 
             log.debug("Camera settings applied")

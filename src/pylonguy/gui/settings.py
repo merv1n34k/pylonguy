@@ -341,15 +341,6 @@ class SettingsWidget(QWidget):
         self.capture_mode.currentTextChanged.connect(self._on_mode_changed)
         capture_layout.addRow("Mode:", self.capture_mode)
 
-        # Waterfall settings (initially hidden)
-        self.waterfall_lines = QSpinBox()
-        self.waterfall_lines.setRange(100, 2000)
-        self.waterfall_lines.setValue(500)
-        self.waterfall_lines_label = QLabel("Buffer Lines:")
-        capture_layout.addRow(self.waterfall_lines_label, self.waterfall_lines)
-        self.waterfall_lines.setVisible(False)
-        self.waterfall_lines_label.setVisible(False)
-
         # Capture settings
         self.output_path = QLineEdit("./output")
         self.image_prefix = QLineEdit("img")
@@ -581,7 +572,6 @@ class SettingsWidget(QWidget):
             },
             "capture": {
                 "mode": self.capture_mode.currentText(),
-                "waterfall_lines": self.waterfall_lines.value(),
                 "path": self.output_path.text(),
                 "image_prefix": self.image_prefix.text(),
                 "video_prefix": self.video_prefix.text(),
