@@ -1,53 +1,67 @@
 # PylonGUY
 
-Your best friend for high-performance camera control for Basler (and GenICam) cameras with high-speed recording capabilities and simple GUI.
+Your best friend for high-performance camera control for Basler cameras with high-speed recording capabilities and simple GUI.
 
 ![preview](https://raw.githubusercontent.com/merv1n34k/pylonguy/refs/heads/master/docs/preview.png)
 
 ## Features
 
-- Real-time preview with FPS monitoring
-- Clear camera configuration with automatic adjustments to camera capabilities
-- High-speed frame capture to raw frames
-- Post-processing recording with configurable playback rate
-- Interactive ROI selection on preview
-- Preset configurations for different capture scenarios (quality, speed,
-  balanced, custom)
-- Waterfall recording (see Waterfall)
+- Real-time preview with adaptive grab strategy (lag-free at any FPS)
+- Camera configuration with automatic adjustment to camera capabilities
+- High-speed frame capture to raw frames with FFmpeg post-processing
+- Configurable playback rate for slow-motion video
+- Interactive ROI selection and offset controls
+- Preset configurations (Default, HighSpeed, FullFrame, Microfluidics)
+- Auto-apply presets on camera connection
+- Waterfall mode for line-scan recording
 
 ## Installation
 
-It is recommended to use [uv](https://docs.astral.sh/uv/):
+### From PyPI
 
 ```bash
-No prior actions needed (see Usage)
+pip install pylonguy
 ```
 
-Alternatively, one can do:
+### From source
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-
-python -m pip install -r requirements.txt
+git clone https://github.com/merv1n34k/pylonguy.git
+cd pylonguy
+pip install -e .
 ```
 
-You also need to have `ffmpeg` at `PATH` for video processing. For macOS users, you can install it with `brew`:
+### Requirements
+
+- Python 3.12+
+- ffmpeg in PATH (for video processing)
+- Basler Pylon SDK (for camera communication)
+
+#### Installing ffmpeg
 
 ```bash
+# macOS
 brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt install ffmpeg
+
+# Windows
+# Download from https://ffmpeg.org/download.html and add to PATH
 ```
 
-Installing [pylon](https://www.baslerweb.com/pylon) might be required. See [known issues](https://github.com/basler/pypylon#known-issues) for further details.
+#### Installing Pylon SDK
+
+Download from [Basler website](https://www.baslerweb.com/pylon). See [pypylon known issues](https://github.com/basler/pypylon#known-issues) for platform-specific notes.
 
 ## Usage
 
 ```bash
-# To run with uv
-uv run main.py
+# Run the application
+pylonguy
 
-# Other users
-source .venv/bin/activate # if not activated
-python main.py
+# Or with uv
+uv run pylonguy
 ```
 
 ## How it works
@@ -57,19 +71,24 @@ The application separates capture from video encoding for maximum performance:
 1. **Capture Phase**: Frames stream from camera → memory buffer → raw files on disk
 2. **Processing Phase**: After recording stops, FFmpeg assembles raw frames into video
 
-This allows you to specify any desired frame rate of a final video, e.g.:
+This allows you to specify any desired playback frame rate, e.g.:
 
 - Camera captures at 1000 fps
 - Video plays back at 24 fps
 - Result: 1 second of capture = 41.7 seconds of slow-motion video
 
-## Waterfall
+## Waterfall Mode
 
-Another interesting feature lets you record single line instead of ROI capture,
-called `waterfall`. Use this for:
-- Maximum frame rates (less data to transfer)
-- Line-scanner cameras
+Record single lines instead of full frames for:
+- Maximum frame rates (minimal data transfer)
+- Line-scan camera emulation
 - Monitoring flow in microfluidic channels
+
+Output format: `.wtf` (waterfall) files, convertible to PNG:
+
+```bash
+python -m pylonguy.wtf2png recording.wtf
+```
 
 ## License
 
