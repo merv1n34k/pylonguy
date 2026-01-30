@@ -24,9 +24,3 @@ pylonguy = "pylonguy.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pylonguy"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"presets.json" = "pylonguy/presets.json"
-
-[tool.hatch.build.targets.sdist.force-include]
-"presets.json" = "presets.json"
