@@ -2,12 +2,13 @@
 
 import sys
 import signal
+import shutil
 import time
 import logging
 import numpy as np
 from pathlib import Path
 from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtGui import QImage, QTransform
 from PyQt5.QtGui import QIcon
 
@@ -27,7 +28,7 @@ log = logging.getLogger("pylonguy")
 class PylonApp:
     """Main application controller"""
 
-    def __init__(self):
+    def __init__(self, missing_deps=None):
         self.camera = Camera()
         self.thread = None
         self.window = MainWindow()
@@ -37,6 +38,7 @@ class PylonApp:
         self.waterfall_mode = False
         self.saved_roi_height = None  # Store height when entering waterfall mode
         self.timeout = 0.05
+        self.missing_deps = missing_deps or []
 
         # FPS estimation variables
         self.fps_frame_count = 0
@@ -46,6 +48,13 @@ class PylonApp:
         self._connect_signals()
         self._setup_logging()
         self._update_camera_list()
+
+        # Disable recording if ffmpeg is missing
+        if "ffmpeg" in self.missing_deps:
+            self.window.preview.btn_record.setEnabled(False)
+            self.window.preview.btn_record.setToolTip(
+                "Recording disabled: ffmpeg not found"
+            )
 
         # Status update timer for FPS
         self.fps_timer = QTimer()
@@ -735,6 +744,16 @@ class PylonApp:
         self.window.settings.btn_disconnect.setEnabled(False)
 
 
+def check_dependencies():
+    """Check for required external dependencies. Returns list of missing deps."""
+    missing = []
+
+    if not shutil.which("ffmpeg"):
+        missing.append("ffmpeg")
+
+    return missing
+
+
 def main():
     """Main entry point"""
     app = QApplication(sys.argv)
@@ -747,7 +766,21 @@ def main():
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
 
-    pylon_app = PylonApp()
+    # Check dependencies before starting
+    missing = check_dependencies()
+    if missing:
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Missing Dependencies")
+        msg.setText(f"Required dependencies not found: {', '.join(missing)}")
+        msg.setInformativeText(
+            "Video recording will not work without ffmpeg.\n\n"
+            "Install ffmpeg and ensure it's in your PATH."
+        )
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
+
+    pylon_app = PylonApp(missing_deps=missing)
     pylon_app.run()
 
     # Handle Ctrl+C gracefully
