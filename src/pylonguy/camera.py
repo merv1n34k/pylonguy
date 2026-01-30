@@ -187,7 +187,12 @@ class Camera:
             latest_only: If True, use LatestImageOnly strategy (better for preview).
                         If False, use OneByOne strategy (preserves all frames for recording).
         """
-        if not self.device or self._is_grabbing:
+        if not self.device:
+            return
+
+        # Check actual device state to avoid race conditions
+        if self.device.IsGrabbing():
+            self._is_grabbing = True
             return
 
         try:
@@ -205,30 +210,25 @@ class Camera:
 
     def stop_grabbing(self):
         """Stop frame acquisition"""
-        if not self.device or not self._is_grabbing:
+        if not self.device:
             return
 
         try:
+            # Always check actual device state
             if self.device.IsGrabbing():
                 self.device.StopGrabbing()
+                log.debug("Camera - Stopped grabbing")
             self._is_grabbing = False
-            log.debug("Camera - Stopped grabbing")
         except Exception as e:
             log.error(f"Failed to stop grabbing: {e}")
             self._is_grabbing = False
 
     def grab_frame(self, timeout_ms: int = 5) -> Optional[np.ndarray]:
         """Grab single frame"""
-        if not self.device:
+        if not self.device or not self.device.IsGrabbing():
             return None
 
         try:
-            # Ensure we're grabbing
-            if not self._is_grabbing:
-                self.start_grabbing()
-
-            if not self.device.IsGrabbing():
-                return None
 
             # Retrieve frame with minimal timeout
             result = self.device.RetrieveResult(
