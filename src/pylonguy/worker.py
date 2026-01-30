@@ -3,7 +3,7 @@
 import subprocess
 import numpy as np
 from pathlib import Path
-from queue import Queue, Empty
+from queue import Queue, Empty, Full
 from threading import Thread, Event
 import logging
 import time
@@ -56,14 +56,14 @@ class VideoWorker:
         if self.queue.full():
             try:
                 self.queue.get_nowait()
-            except:
+            except Empty:
                 pass
 
         try:
             self.queue.put_nowait((frame, self.frame_count))
             self.frame_count += 1
             return True
-        except:
+        except Full:
             return False
 
     def stop(self) -> str:
@@ -76,6 +76,8 @@ class VideoWorker:
             if remaining > 0:
                 log.info(f"Writing {remaining} queued frames...")
             self.thread.join(timeout=60)
+            if self.thread.is_alive():
+                log.warning("Writer thread did not finish in time")
 
         log.info(f"Wrote {self.frame_count} frames")
 
@@ -251,14 +253,18 @@ class WaterfallWorker:
         """Stop writing and close file"""
         self.active = False
 
-        # Flush remaining buffer
-        if self.buffer:
-            self._flush_buffer()
-
-        # Close file
-        if self.file:
-            self.file.close()
-            self.file = None
+        try:
+            # Flush remaining buffer
+            if self.buffer:
+                self._flush_buffer()
+        finally:
+            # Always close file
+            if self.file:
+                try:
+                    self.file.close()
+                except Exception as e:
+                    log.warning(f"Error closing waterfall file: {e}")
+                self.file = None
 
         log.info(
             f"Waterfall saved: {self.output_path} ({self.line_count} lines, width={self.width})"
