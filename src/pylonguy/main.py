@@ -11,10 +11,10 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage, QTransform
 from PyQt5.QtGui import QIcon
 
-from camera import Camera
-from gui import MainWindow
-from thread import CameraThread
-from worker import VideoWorker, WaterfallWorker
+from .camera import Camera
+from .gui import MainWindow
+from .thread import CameraThread
+from .worker import VideoWorker, WaterfallWorker
 
 logging.basicConfig(
     level=logging.DEBUG,

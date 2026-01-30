@@ -16,7 +16,7 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 import sys
-from deshear_util import deshear_array
+from .deshear_util import deshear_array
 
 
 def read_waterfall_file(file_path: Path):
