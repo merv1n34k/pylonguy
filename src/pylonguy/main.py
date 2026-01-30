@@ -1,6 +1,7 @@
 """Main application - entry point and app logic"""
 
 import sys
+import signal
 import time
 import logging
 import numpy as np
@@ -745,6 +746,14 @@ def main():
 
     pylon_app = PylonApp()
     pylon_app.run()
+
+    # Handle Ctrl+C gracefully
+    signal.signal(signal.SIGINT, lambda *_: app.quit())
+
+    # Timer to allow Python to process signals during Qt event loop
+    signal_timer = QTimer()
+    signal_timer.timeout.connect(lambda: None)
+    signal_timer.start(100)
 
     app.aboutToQuit.connect(lambda: pylon_app.disconnect_camera())
 
