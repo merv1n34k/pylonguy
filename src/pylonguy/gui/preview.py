@@ -1,6 +1,6 @@
 """Preview widget - Camera display with zero-copy rendering"""
 
-from PyQt5.QtCore import Qt, pyqtSignal, QRect, pyqtSlot
+from PyQt5.QtCore import Qt, pyqtSignal, QRect
 from PyQt5.QtGui import QImage, QPainter, QColor, QPen, QTransform, QFont
 from PyQt5.QtWidgets import (
     QWidget,

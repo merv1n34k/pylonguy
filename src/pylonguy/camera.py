@@ -133,8 +133,7 @@ class Camera:
                     result["inc"] = param.Inc
                 if hasattr(param, "Symbolics"):
                     result["symbolics"] = param.Symbolics
-        except Exception as e:
-            # log.debug(f"Camera - Could not get {param_name}: {e}")
+        except Exception:
             pass
         return result
 
