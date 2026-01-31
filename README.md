@@ -64,6 +64,10 @@ pylonguy
 uv run pylonguy
 ```
 
+## Presets
+
+Camera presets are saved to `presets.json` in the current working directory. This allows you to maintain different presets for different projects by running the application from each project's folder.
+
 ## How it works
 
 The application separates capture from video encoding for maximum performance:
