@@ -1,10 +1,12 @@
-"""Preview widget - Camera display with zero-copy rendering"""
+"""Settings widget - Camera controls and presets"""
 
-from PyQt5.QtCore import Qt, pyqtSignal, QRect, pyqtSlot
+from PyQt5.QtCore import Qt, pyqtSignal, QRect
 from PyQt5.QtWidgets import *
 import json
 from pathlib import Path
 import logging
+
+from ..constants import MAX_OFFSET_X, MAX_OFFSET_Y, MIN_ROI_WIDTH, MIN_ROI_HEIGHT
 
 log = logging.getLogger("pylonguy")
 
@@ -212,18 +214,18 @@ class SettingsWidget(QWidget):
         roi_layout = QFormLayout()
 
         self.roi_width = QSpinBox()
-        self.roi_width.setRange(16, 4096)
+        self.roi_width.setRange(MIN_ROI_WIDTH, MAX_OFFSET_X)
         self.roi_width.setValue(640)
 
         self.roi_height = QSpinBox()
-        self.roi_height.setRange(16, 3072)
+        self.roi_height.setRange(MIN_ROI_HEIGHT, MAX_OFFSET_Y)
         self.roi_height.setValue(480)
 
         self.roi_offset_x = QSpinBox()
-        self.roi_offset_x.setRange(0, 4096)
+        self.roi_offset_x.setRange(0, MAX_OFFSET_X)
 
         self.roi_offset_y = QSpinBox()
-        self.roi_offset_y.setRange(0, 3072)
+        self.roi_offset_y.setRange(0, MAX_OFFSET_Y)
 
         self.binning_horizontal = QComboBox()
         self.binning_horizontal.addItems(["1", "2", "3", "4"])

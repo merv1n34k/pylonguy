@@ -16,6 +16,14 @@ from .camera import Camera
 from .gui import MainWindow
 from .thread import CameraThread
 from .worker import VideoWorker, WaterfallWorker
+from .constants import (
+    CAMERA_APPLY_TIMEOUT,
+    FPS_UPDATE_INTERVAL_MS,
+    FPS_RESET_INTERVAL,
+    SIGNAL_TIMER_INTERVAL_MS,
+    MAX_OFFSET_X,
+    MAX_OFFSET_Y,
+)
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -36,7 +44,7 @@ class PylonApp:
         self.current_selection = None
         self.gui_handler = None
         self.waterfall_mode = False
-        self.timeout = 0.05
+        self.timeout = CAMERA_APPLY_TIMEOUT
         self.missing_deps = missing_deps or []
 
         # FPS estimation variables
@@ -58,7 +66,7 @@ class PylonApp:
         # Status update timer for FPS
         self.fps_timer = QTimer()
         self.fps_timer.timeout.connect(self._update_fps)
-        self.fps_timer.start(200)
+        self.fps_timer.start(FPS_UPDATE_INTERVAL_MS)
 
         log.info("Application started")
 
@@ -192,7 +200,7 @@ class PylonApp:
                         fps = self.estimated_fps
 
                         # Reset counter every 5 seconds to get fresh estimates
-                        if elapsed > 5.0:
+                        if elapsed > FPS_RESET_INTERVAL:
                             self.fps_frame_count = 0
                             self.fps_start_time = time.time()
 
@@ -356,14 +364,14 @@ class PylonApp:
             offset_y_info = self.camera.get_parameter("OffsetY")
             if offset_x_info:
                 self.window.preview.offset_x_slider.setRange(
-                    offset_x_info.get("min", 0), 4096
+                    offset_x_info.get("min", 0), MAX_OFFSET_X
                 )
                 self.window.preview.offset_x_slider.setValue(
                     offset_x_info.get("value", 0)
                 )
             if offset_y_info:
                 self.window.preview.offset_y_slider.setRange(
-                    offset_y_info.get("min", 0), 3072
+                    offset_y_info.get("min", 0), MAX_OFFSET_Y
                 )
                 self.window.preview.offset_y_slider.setValue(
                     offset_y_info.get("value", 0)
@@ -746,7 +754,7 @@ def main():
     # Timer to allow Python to process signals during Qt event loop
     signal_timer = QTimer()
     signal_timer.timeout.connect(lambda: None)
-    signal_timer.start(100)
+    signal_timer.start(SIGNAL_TIMER_INTERVAL_MS)
 
     app.aboutToQuit.connect(lambda: pylon_app.disconnect_camera())
 

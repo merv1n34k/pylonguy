@@ -6,6 +6,8 @@ import numpy as np
 import time
 import logging
 
+from .constants import STATS_UPDATE_INTERVAL, LIMIT_CHECK_INTERVAL
+
 log = logging.getLogger("pylonguy")
 
 
@@ -60,7 +62,7 @@ class CameraThread(QThread):
                         self.frame_count += 1
 
                         # Check limits periodically (every 100 frames/lines)
-                        if self.frame_count % 100 == 0:
+                        if self.frame_count % LIMIT_CHECK_INTERVAL == 0:
                             if self._check_limits():
                                 self.recording_stopped.emit()
                                 self.stop_recording()
@@ -72,7 +74,7 @@ class CameraThread(QThread):
 
                 # Update stats periodically
                 current_time = time.time()
-                if current_time - self.last_stats_time >= 0.2:
+                if current_time - self.last_stats_time >= STATS_UPDATE_INTERVAL:
                     self.last_stats_time = current_time
                     recording = self._recording_event.is_set()
                     stats = {

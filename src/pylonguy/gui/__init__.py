@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout
 from .preview import PreviewWidget
 from .settings import SettingsWidget
 from .log import LogWidget
+from ..constants import WINDOW_DEFAULT_GEOMETRY, SETTINGS_PANEL_WIDTH
 
 
 class MainWindow(QMainWindow):
@@ -17,7 +18,7 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("PylonGuy")
-        self.setGeometry(100, 100, 1400, 900)
+        self.setGeometry(*WINDOW_DEFAULT_GEOMETRY)
 
         # Create widgets
         self.preview = PreviewWidget()
@@ -35,7 +36,7 @@ class MainWindow(QMainWindow):
 
         # Right: settings + log
         right_widget = QWidget()
-        right_widget.setFixedWidth(400)
+        right_widget.setFixedWidth(SETTINGS_PANEL_WIDTH)
         right_layout = QVBoxLayout()
         right_layout.setContentsMargins(5, 5, 5, 5)
         right_layout.addWidget(self.settings, 3)

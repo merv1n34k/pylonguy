@@ -14,6 +14,8 @@ from pathlib import Path
 import logging
 import time
 
+from ..constants import LOG_MAX_HEIGHT
+
 log = logging.getLogger("pylonguy")
 
 
@@ -60,7 +62,7 @@ class LogWidget(QWidget):
         # Log display
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumHeight(150)
+        self.log.setMaximumHeight(LOG_MAX_HEIGHT)
         layout.addWidget(self.log)
 
         self.setLayout(layout)

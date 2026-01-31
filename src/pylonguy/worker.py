@@ -8,6 +8,8 @@ from threading import Thread, Event
 import logging
 import time
 
+from .constants import WRITER_QUEUE_SIZE, WRITER_THREAD_TIMEOUT, QUEUE_GET_TIMEOUT
+
 log = logging.getLogger("pylonguy")
 
 
@@ -22,7 +24,7 @@ class VideoWorker:
         self.fps = fps
 
         # Simple queue for frame writing
-        self.queue = Queue(maxsize=10000)
+        self.queue = Queue(maxsize=WRITER_QUEUE_SIZE)
         self.thread = None
         self._stop_event = Event()
         self.frame_count = 0
@@ -75,7 +77,7 @@ class VideoWorker:
             remaining = self.queue.qsize()
             if remaining > 0:
                 log.info(f"Writing {remaining} queued frames...")
-            self.thread.join(timeout=60)
+            self.thread.join(timeout=WRITER_THREAD_TIMEOUT)
             if self.thread.is_alive():
                 log.warning("Writer thread did not finish in time")
 
@@ -90,7 +92,7 @@ class VideoWorker:
         """Write frames to disk as fast as possible"""
         while not self._stop_event.is_set() or not self.queue.empty():
             try:
-                frame, idx = self.queue.get(timeout=0.1)
+                frame, idx = self.queue.get(timeout=QUEUE_GET_TIMEOUT)
 
                 # Convert 16-bit to 8-bit if needed
                 if frame.dtype == np.uint16:

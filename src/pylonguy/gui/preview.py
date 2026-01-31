@@ -14,6 +14,14 @@ from PyQt5.QtWidgets import (
 import numpy as np
 import logging
 
+from ..constants import (
+    MAX_OFFSET_X,
+    MAX_OFFSET_Y,
+    OFFSET_SLIDER_STEP,
+    CONTROLS_MAX_HEIGHT,
+    Theme,
+)
+
 log = logging.getLogger("pylonguy")
 
 
@@ -407,7 +415,7 @@ class PreviewControls(QWidget):
         # Status bar
         status_widget = QWidget()
         status_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        status_widget.setStyleSheet("QWidget { background: #1a1a1a; }")
+        status_widget.setStyleSheet(f"QWidget {{ background: {Theme.BG_DARK}; }}")
 
         status_layout = QHBoxLayout()
         status_layout.setContentsMargins(0, 0, 0, 0)
@@ -420,11 +428,11 @@ class PreviewControls(QWidget):
         fps_layout.setSpacing(0)
         fps_label = QLabel(" FPS ")
         fps_label.setStyleSheet(
-            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
         )
         self.fps_value = QLabel(" 0.0 ")
         self.fps_value.setStyleSheet(
-            "background: #222; color: #0f0; padding: 5px 10px;"
+            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
         )
         fps_layout.addWidget(fps_label)
         fps_layout.addWidget(self.fps_value, 1)
@@ -437,11 +445,11 @@ class PreviewControls(QWidget):
         rec_layout.setSpacing(0)
         rec_label = QLabel(" REC ")
         rec_label.setStyleSheet(
-            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
         )
         self.rec_status = QLabel(" OFF ")
         self.rec_status.setStyleSheet(
-            "background: #222; color: #0f0; padding: 5px 10px;"
+            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
         )
         rec_layout.addWidget(rec_label)
         rec_layout.addWidget(self.rec_status, 1)
@@ -454,11 +462,11 @@ class PreviewControls(QWidget):
         frames_layout.setSpacing(0)
         self.frames_label = QLabel(" FRAMES ")
         self.frames_label.setStyleSheet(
-            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
         )
         self.rec_frames = QLabel(" 0 ")
         self.rec_frames.setStyleSheet(
-            "background: #222; color: #0f0; padding: 5px 10px;"
+            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
         )
         frames_layout.addWidget(self.frames_label)
         frames_layout.addWidget(self.rec_frames, 1)
@@ -471,10 +479,10 @@ class PreviewControls(QWidget):
         time_layout.setSpacing(0)
         time_label = QLabel(" TIME ")
         time_label.setStyleSheet(
-            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
         )
         self.rec_time = QLabel(" 0.0s ")
-        self.rec_time.setStyleSheet("background: #222; color: #0f0; padding: 5px 10px;")
+        self.rec_time.setStyleSheet(f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;")
         time_layout.addWidget(time_label)
         time_layout.addWidget(self.rec_time, 1)
         time_widget.setLayout(time_layout)
@@ -486,11 +494,11 @@ class PreviewControls(QWidget):
         roi_layout.setSpacing(0)
         roi_label = QLabel(" ROI ")
         roi_label.setStyleSheet(
-            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
         )
         self.roi_value = QLabel(" --- ")
         self.roi_value.setStyleSheet(
-            "background: #222; color: #0f0; padding: 5px 10px;"
+            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
         )
         roi_layout.addWidget(roi_label)
         roi_layout.addWidget(self.roi_value, 1)
@@ -503,11 +511,11 @@ class PreviewControls(QWidget):
         sel_layout.setSpacing(0)
         sel_label = QLabel(" SEL ")
         sel_label.setStyleSheet(
-            "background: #444; color: #bbb; padding: 5px 10px; font-weight: bold;"
+            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
         )
         self.sel_value = QLabel(" None ")
         self.sel_value.setStyleSheet(
-            "background: #222; color: #0f0; padding: 5px 10px;"
+            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
         )
         sel_layout.addWidget(sel_label)
         sel_layout.addWidget(self.sel_value, 1)
@@ -527,26 +535,26 @@ class PreviewControls(QWidget):
         # Control buttons
         button_widget = QWidget()
         button_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        button_widget.setStyleSheet("""
-            QWidget {
+        button_widget.setStyleSheet(f"""
+            QWidget {{
                 border-left: 1px solid #333;
                 border-right: 1px solid #333;
-                background: #2a2a2a;
-            }
-            QPushButton {
-                background: #3c3c3c;
-                color: white;
+                background: {Theme.BG_MEDIUM};
+            }}
+            QPushButton {{
+                background: {Theme.BG_CONTROL};
+                color: {Theme.TEXT_WHITE};
                 border: none;
                 font-weight: bold;
                 font-size: 12px;
                 padding: 10px;
-            }
-            QPushButton:hover {
-                background: #4c4c4c;
-            }
-            QPushButton:pressed {
-                background: #2c2c2c;
-            }
+            }}
+            QPushButton:hover {{
+                background: {Theme.BG_CONTROL_HOVER};
+            }}
+            QPushButton:pressed {{
+                background: {Theme.BG_CONTROL_PRESSED};
+            }}
         """)
 
         button_layout = QHBoxLayout()
@@ -569,7 +577,7 @@ class PreviewControls(QWidget):
         # Offset sliders
         slider_widget = QWidget()
         slider_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        slider_widget.setStyleSheet("QWidget { background: #2a2a2a; padding: 5px; }")
+        slider_widget.setStyleSheet(f"QWidget {{ background: {Theme.BG_MEDIUM}; padding: 5px; }}")
 
         slider_layout = QVBoxLayout()
         slider_layout.setContentsMargins(10, 5, 10, 5)
@@ -578,27 +586,27 @@ class PreviewControls(QWidget):
         # X Offset slider
         x_layout = QHBoxLayout()
         x_label = QLabel("Offset X:")
-        x_label.setStyleSheet("color: white; min-width: 60px;")
+        x_label.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 60px;")
         self.offset_x_slider = QSlider(Qt.Horizontal)
-        self.offset_x_slider.setRange(0, 4096)
+        self.offset_x_slider.setRange(0, MAX_OFFSET_X)
         self.offset_x_slider.setValue(0)
-        self.offset_x_slider.setSingleStep(16)
-        self.offset_x_slider.setPageStep(16)
-        self.offset_x_slider.setStyleSheet("""
-            QSlider::groove:horizontal {
+        self.offset_x_slider.setSingleStep(OFFSET_SLIDER_STEP)
+        self.offset_x_slider.setPageStep(OFFSET_SLIDER_STEP)
+        self.offset_x_slider.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
                 height: 6px;
-                background: #555;
+                background: {Theme.SLIDER_GROOVE};
                 border-radius: 3px;
-            }
-            QSlider::handle:horizontal {
+            }}
+            QSlider::handle:horizontal {{
                 width: 18px;
-                background: #0af;
+                background: {Theme.ACCENT};
                 border-radius: 9px;
                 margin: -6px 0;
-            }
+            }}
         """)
         self.offset_x_value = QLabel("0")
-        self.offset_x_value.setStyleSheet("color: white; min-width: 40px;")
+        self.offset_x_value.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 40px;")
         x_layout.addWidget(x_label)
         x_layout.addWidget(self.offset_x_slider)
         x_layout.addWidget(self.offset_x_value)
@@ -606,27 +614,27 @@ class PreviewControls(QWidget):
         # Y Offset slider
         y_layout = QHBoxLayout()
         y_label = QLabel("Offset Y:")
-        y_label.setStyleSheet("color: white; min-width: 60px;")
+        y_label.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 60px;")
         self.offset_y_slider = QSlider(Qt.Horizontal)
-        self.offset_y_slider.setRange(0, 3072)
+        self.offset_y_slider.setRange(0, MAX_OFFSET_Y)
         self.offset_y_slider.setValue(0)
-        self.offset_y_slider.setSingleStep(16)
-        self.offset_y_slider.setPageStep(16)
-        self.offset_y_slider.setStyleSheet("""
-            QSlider::groove:horizontal {
+        self.offset_y_slider.setSingleStep(OFFSET_SLIDER_STEP)
+        self.offset_y_slider.setPageStep(OFFSET_SLIDER_STEP)
+        self.offset_y_slider.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
                 height: 6px;
-                background: #555;
+                background: {Theme.SLIDER_GROOVE};
                 border-radius: 3px;
-            }
-            QSlider::handle:horizontal {
+            }}
+            QSlider::handle:horizontal {{
                 width: 18px;
-                background: #0af;
+                background: {Theme.ACCENT};
                 border-radius: 9px;
                 margin: -6px 0;
-            }
+            }}
         """)
         self.offset_y_value = QLabel("0")
-        self.offset_y_value.setStyleSheet("color: white; min-width: 40px;")
+        self.offset_y_value.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 40px;")
         y_layout.addWidget(y_label)
         y_layout.addWidget(self.offset_y_slider)
         y_layout.addWidget(self.offset_y_value)
@@ -655,12 +663,12 @@ class PreviewControls(QWidget):
             if kwargs["recording"]:
                 self.rec_status.setText(" ON ")
                 self.rec_status.setStyleSheet(
-                    "background: #222; color: #f00; padding: 5px 10px;"
+                    f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT_RECORDING}; padding: 5px 10px;"
                 )
             else:
                 self.rec_status.setText(" OFF ")
                 self.rec_status.setStyleSheet(
-                    "background: #222; color: #0f0; padding: 5px 10px;"
+                    f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
                 )
 
         if "frames" in kwargs:
@@ -711,7 +719,7 @@ class PreviewWidget(QWidget):
         # Controls area
         self.controls = PreviewControls()
         self.controls.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.controls.setMaximumHeight(150)
+        self.controls.setMaximumHeight(CONTROLS_MAX_HEIGHT)
         layout.addWidget(self.controls)
 
         # Connect internal signals
