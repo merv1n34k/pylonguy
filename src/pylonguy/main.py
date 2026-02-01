@@ -427,7 +427,7 @@ class PylonApp:
 
     def apply_camera_settings(self):
         """Apply settings to camera"""
-        if not self._require_camera():
+        if not self.camera.device:
             return
 
         # Stop preview if running
