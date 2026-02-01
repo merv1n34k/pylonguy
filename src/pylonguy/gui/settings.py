@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QLineEdit, QScrollArea, QGroupBox,
 )
 import json
+import re
 from pathlib import Path
 import logging
 
@@ -133,11 +134,21 @@ class SettingsWidget(QWidget):
         except Exception as e:
             log.error(f"Failed to save presets: {e}")
 
+    def _is_valid_preset_name(self, name: str) -> bool:
+        """Validate preset name (alphanumeric, spaces, hyphens, max 50 chars)."""
+        if not name or len(name) > 50:
+            return False
+        return bool(re.match(r'^[\w\s-]+$', name))
+
     def save_preset(self):
         """Save current settings as named preset"""
         preset_name = self.preset_name_input.text().strip()
         if not preset_name:
             log.warning("Please enter a preset name")
+            return
+
+        if not self._is_valid_preset_name(preset_name):
+            log.warning("Invalid preset name. Use letters, numbers, spaces, hyphens.")
             return
 
         # Get current values from widgets
