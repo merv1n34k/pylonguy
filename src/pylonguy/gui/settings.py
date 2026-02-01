@@ -29,7 +29,32 @@ class SettingsWidget(QWidget):
         self.presets = {}
         self._applying_preset = False
         self.init_ui()
+        self._init_param_widgets()
         self.init_presets()
+
+    def _init_param_widgets(self):
+        """Initialize parameter-to-widget mapping after UI creation."""
+        self._param_widgets = {
+            "Width": self.roi_width,
+            "Height": self.roi_height,
+            "OffsetX": self.roi_offset_x,
+            "OffsetY": self.roi_offset_y,
+            "ExposureTime": self.exposure,
+            "Gain": self.gain,
+            "AcquisitionFrameRate": self.framerate,
+            "BinningHorizontal": self.binning_horizontal,
+            "BinningVertical": self.binning_vertical,
+            "PixelFormat": self.pixel_format,
+            "SensorReadoutMode": self.sensor_mode,
+        }
+        # Widgets that need special handling for disable (tuples)
+        self._param_widgets_disable = {
+            "SensorReadoutMode": self.sensor_mode,
+            "BinningHorizontal": self.binning_horizontal,
+            "BinningVertical": self.binning_vertical,
+            "AcquisitionFrameRate": (self.framerate_enable, self.framerate),
+            "DeviceLinkThroughputLimit": (self.throughput_enable, self.throughput_limit),
+        }
 
     def init_presets(self):
         """Initialize preset configurations from JSON file"""
@@ -472,18 +497,8 @@ class SettingsWidget(QWidget):
         self, param_name: str, min_val=None, max_val=None, inc=None, options=None
     ):
         """Update parameter limits/options from app.py"""
-        widget_map = {
-            "Width": self.roi_width,
-            "Height": self.roi_height,
-            "OffsetX": self.roi_offset_x,
-            "OffsetY": self.roi_offset_y,
-            "ExposureTime": self.exposure,
-            "Gain": self.gain,
-            "AcquisitionFrameRate": self.framerate,
-        }
-
-        if param_name in widget_map:
-            widget = widget_map[param_name]
+        if param_name in self._param_widgets:
+            widget = self._param_widgets[param_name]
             if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
                 if min_val is not None and max_val is not None:
                     widget.setRange(min_val, max_val)
@@ -499,21 +514,8 @@ class SettingsWidget(QWidget):
 
     def set_parameter_value(self, param_name: str, value):
         """Set a parameter value from app.py"""
-        widget_map = {
-            "Width": self.roi_width,
-            "Height": self.roi_height,
-            "OffsetX": self.roi_offset_x,
-            "OffsetY": self.roi_offset_y,
-            "ExposureTime": self.exposure,
-            "Gain": self.gain,
-            "BinningHorizontal": self.binning_horizontal,
-            "BinningVertical": self.binning_vertical,
-            "PixelFormat": self.pixel_format,
-            "SensorReadoutMode": self.sensor_mode,
-        }
-
-        if param_name in widget_map:
-            widget = widget_map[param_name]
+        if param_name in self._param_widgets:
+            widget = self._param_widgets[param_name]
             if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
                 widget.setValue(value)
             elif isinstance(widget, QComboBox):
@@ -523,19 +525,8 @@ class SettingsWidget(QWidget):
 
     def disable_parameter(self, param_name: str):
         """Disable a parameter that doesn't exist in camera"""
-        widget_map = {
-            "SensorReadoutMode": self.sensor_mode,
-            "BinningHorizontal": self.binning_horizontal,
-            "BinningVertical": self.binning_vertical,
-            "AcquisitionFrameRate": (self.framerate_enable, self.framerate),
-            "DeviceLinkThroughputLimit": (
-                self.throughput_enable,
-                self.throughput_limit,
-            ),
-        }
-
-        if param_name in widget_map:
-            widget = widget_map[param_name]
+        if param_name in self._param_widgets_disable:
+            widget = self._param_widgets_disable[param_name]
             if isinstance(widget, tuple):
                 for w in widget:
                     w.setEnabled(False)

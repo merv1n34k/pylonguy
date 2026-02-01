@@ -70,6 +70,20 @@ class PylonApp:
 
         log.info("Application started")
 
+    def _require_camera(self) -> bool:
+        """Check camera is connected, log warning if not."""
+        if not self.camera.device:
+            log.warning("Camera not connected")
+            return False
+        return True
+
+    def _require_live(self) -> bool:
+        """Check live preview is running."""
+        if not self.thread:
+            log.error("Start live preview first")
+            return False
+        return True
+
     def _connect_signals(self):
         """Connect GUI signals"""
         self.window.settings.btn_connect.clicked.connect(self.connect_camera)
@@ -263,8 +277,7 @@ class PylonApp:
 
     def start_live(self):
         """Start live preview"""
-        if not self.camera.device:
-            log.error("Camera not connected")
+        if not self._require_camera():
             return
 
         # Reset FPS estimation
@@ -414,8 +427,7 @@ class PylonApp:
 
     def apply_camera_settings(self):
         """Apply settings to camera"""
-        if not self.camera.device:
-            log.warning("Camera not connected")
+        if not self._require_camera():
             return
 
         # Stop preview if running
@@ -596,8 +608,7 @@ class PylonApp:
 
     def start_recording(self):
         """Start recording (frames or waterfall)"""
-        if not self.thread:
-            log.error("Start live preview first")
+        if not self._require_live():
             return
 
         settings = self.window.settings.get_settings()
