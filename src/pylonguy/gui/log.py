@@ -80,7 +80,7 @@ class LogWidget(QWidget):
             self.log.append(message)
             scrollbar = self.log.verticalScrollBar()
             scrollbar.setValue(scrollbar.maximum())
-        except:
+        except Exception:
             pass
 
     def clear_log(self):

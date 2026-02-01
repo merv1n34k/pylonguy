@@ -1,7 +1,11 @@
 """Settings widget - Camera controls and presets"""
 
-from PyQt5.QtCore import Qt, pyqtSignal, QRect
-from PyQt5.QtWidgets import *
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
+    QLabel, QPushButton, QComboBox, QSpinBox, QDoubleSpinBox,
+    QCheckBox, QLineEdit, QScrollArea, QGroupBox,
+)
 import json
 from pathlib import Path
 import logging
