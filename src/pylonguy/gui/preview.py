@@ -407,6 +407,65 @@ class PreviewControls(QWidget):
         super().__init__()
         self.init_ui()
 
+    def _create_status_section(self, label_text: str, initial_value: str = "0"):
+        """Create a status section with label and value display.
+
+        Returns:
+            Tuple of (container widget, label widget, value widget)
+        """
+        widget = QWidget()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        label = QLabel(f" {label_text} ")
+        label.setStyleSheet(
+            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
+        )
+
+        value = QLabel(f" {initial_value} ")
+        value.setStyleSheet(
+            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
+        )
+
+        layout.addWidget(label)
+        layout.addWidget(value, 1)
+        widget.setLayout(layout)
+
+        return widget, label, value
+
+    def _create_offset_slider(self, max_val: int):
+        """Create an offset slider with standard configuration.
+
+        Returns:
+            Tuple of (slider, value label)
+        """
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(0, max_val)
+        slider.setValue(0)
+        slider.setSingleStep(OFFSET_SLIDER_STEP)
+        slider.setPageStep(OFFSET_SLIDER_STEP)
+        slider.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                height: 6px;
+                background: {Theme.SLIDER_GROOVE};
+                border-radius: 3px;
+            }}
+            QSlider::handle:horizontal {{
+                width: 18px;
+                background: {Theme.ACCENT};
+                border-radius: 9px;
+                margin: -6px 0;
+            }}
+        """)
+
+        value_label = QLabel("0")
+        value_label.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 40px;")
+
+        slider.valueChanged.connect(lambda v: value_label.setText(str(v)))
+
+        return slider, value_label
+
     def init_ui(self):
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -421,105 +480,13 @@ class PreviewControls(QWidget):
         status_layout.setContentsMargins(0, 0, 0, 0)
         status_layout.setSpacing(0)
 
-        # FPS Section
-        fps_widget = QWidget()
-        fps_layout = QHBoxLayout()
-        fps_layout.setContentsMargins(0, 0, 0, 0)
-        fps_layout.setSpacing(0)
-        fps_label = QLabel(" FPS ")
-        fps_label.setStyleSheet(
-            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
-        )
-        self.fps_value = QLabel(" 0.0 ")
-        self.fps_value.setStyleSheet(
-            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
-        )
-        fps_layout.addWidget(fps_label)
-        fps_layout.addWidget(self.fps_value, 1)
-        fps_widget.setLayout(fps_layout)
-
-        # Recording Section
-        rec_widget = QWidget()
-        rec_layout = QHBoxLayout()
-        rec_layout.setContentsMargins(0, 0, 0, 0)
-        rec_layout.setSpacing(0)
-        rec_label = QLabel(" REC ")
-        rec_label.setStyleSheet(
-            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
-        )
-        self.rec_status = QLabel(" OFF ")
-        self.rec_status.setStyleSheet(
-            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
-        )
-        rec_layout.addWidget(rec_label)
-        rec_layout.addWidget(self.rec_status, 1)
-        rec_widget.setLayout(rec_layout)
-
-        # Frames/Lines Section
-        frames_widget = QWidget()
-        frames_layout = QHBoxLayout()
-        frames_layout.setContentsMargins(0, 0, 0, 0)
-        frames_layout.setSpacing(0)
-        self.frames_label = QLabel(" FRAMES ")
-        self.frames_label.setStyleSheet(
-            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
-        )
-        self.rec_frames = QLabel(" 0 ")
-        self.rec_frames.setStyleSheet(
-            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
-        )
-        frames_layout.addWidget(self.frames_label)
-        frames_layout.addWidget(self.rec_frames, 1)
-        frames_widget.setLayout(frames_layout)
-
-        # Time Section
-        time_widget = QWidget()
-        time_layout = QHBoxLayout()
-        time_layout.setContentsMargins(0, 0, 0, 0)
-        time_layout.setSpacing(0)
-        time_label = QLabel(" TIME ")
-        time_label.setStyleSheet(
-            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
-        )
-        self.rec_time = QLabel(" 0.0s ")
-        self.rec_time.setStyleSheet(f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;")
-        time_layout.addWidget(time_label)
-        time_layout.addWidget(self.rec_time, 1)
-        time_widget.setLayout(time_layout)
-
-        # ROI Section
-        roi_widget = QWidget()
-        roi_layout = QHBoxLayout()
-        roi_layout.setContentsMargins(0, 0, 0, 0)
-        roi_layout.setSpacing(0)
-        roi_label = QLabel(" ROI ")
-        roi_label.setStyleSheet(
-            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
-        )
-        self.roi_value = QLabel(" --- ")
-        self.roi_value.setStyleSheet(
-            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
-        )
-        roi_layout.addWidget(roi_label)
-        roi_layout.addWidget(self.roi_value, 1)
-        roi_widget.setLayout(roi_layout)
-
-        # Selection Section
-        sel_widget = QWidget()
-        sel_layout = QHBoxLayout()
-        sel_layout.setContentsMargins(0, 0, 0, 0)
-        sel_layout.setSpacing(0)
-        sel_label = QLabel(" SEL ")
-        sel_label.setStyleSheet(
-            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
-        )
-        self.sel_value = QLabel(" None ")
-        self.sel_value.setStyleSheet(
-            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
-        )
-        sel_layout.addWidget(sel_label)
-        sel_layout.addWidget(self.sel_value, 1)
-        sel_widget.setLayout(sel_layout)
+        # Create status sections using factory method
+        fps_widget, _, self.fps_value = self._create_status_section("FPS", "0.0")
+        rec_widget, _, self.rec_status = self._create_status_section("REC", "OFF")
+        frames_widget, self.frames_label, self.rec_frames = self._create_status_section("FRAMES", "0")
+        time_widget, _, self.rec_time = self._create_status_section("TIME", "0.0s")
+        roi_widget, _, self.roi_value = self._create_status_section("ROI", "---")
+        sel_widget, _, self.sel_value = self._create_status_section("SEL", "None")
 
         # Add all status sections
         status_layout.addWidget(fps_widget, 1)
@@ -583,58 +550,22 @@ class PreviewControls(QWidget):
         slider_layout.setContentsMargins(10, 5, 10, 5)
         slider_layout.setSpacing(5)
 
-        # X Offset slider
+        # Create offset sliders using factory method
+        self.offset_x_slider, self.offset_x_value = self._create_offset_slider(MAX_OFFSET_X)
+        self.offset_y_slider, self.offset_y_value = self._create_offset_slider(MAX_OFFSET_Y)
+
+        # X Offset layout
         x_layout = QHBoxLayout()
         x_label = QLabel("Offset X:")
         x_label.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 60px;")
-        self.offset_x_slider = QSlider(Qt.Horizontal)
-        self.offset_x_slider.setRange(0, MAX_OFFSET_X)
-        self.offset_x_slider.setValue(0)
-        self.offset_x_slider.setSingleStep(OFFSET_SLIDER_STEP)
-        self.offset_x_slider.setPageStep(OFFSET_SLIDER_STEP)
-        self.offset_x_slider.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
-                height: 6px;
-                background: {Theme.SLIDER_GROOVE};
-                border-radius: 3px;
-            }}
-            QSlider::handle:horizontal {{
-                width: 18px;
-                background: {Theme.ACCENT};
-                border-radius: 9px;
-                margin: -6px 0;
-            }}
-        """)
-        self.offset_x_value = QLabel("0")
-        self.offset_x_value.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 40px;")
         x_layout.addWidget(x_label)
         x_layout.addWidget(self.offset_x_slider)
         x_layout.addWidget(self.offset_x_value)
 
-        # Y Offset slider
+        # Y Offset layout
         y_layout = QHBoxLayout()
         y_label = QLabel("Offset Y:")
         y_label.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 60px;")
-        self.offset_y_slider = QSlider(Qt.Horizontal)
-        self.offset_y_slider.setRange(0, MAX_OFFSET_Y)
-        self.offset_y_slider.setValue(0)
-        self.offset_y_slider.setSingleStep(OFFSET_SLIDER_STEP)
-        self.offset_y_slider.setPageStep(OFFSET_SLIDER_STEP)
-        self.offset_y_slider.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
-                height: 6px;
-                background: {Theme.SLIDER_GROOVE};
-                border-radius: 3px;
-            }}
-            QSlider::handle:horizontal {{
-                width: 18px;
-                background: {Theme.ACCENT};
-                border-radius: 9px;
-                margin: -6px 0;
-            }}
-        """)
-        self.offset_y_value = QLabel("0")
-        self.offset_y_value.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 40px;")
         y_layout.addWidget(y_label)
         y_layout.addWidget(self.offset_y_slider)
         y_layout.addWidget(self.offset_y_value)
@@ -643,14 +574,6 @@ class PreviewControls(QWidget):
         slider_layout.addLayout(y_layout)
         slider_widget.setLayout(slider_layout)
         layout.addWidget(slider_widget)
-
-        # Connect slider value displays
-        self.offset_x_slider.valueChanged.connect(
-            lambda v: self.offset_x_value.setText(str(v))
-        )
-        self.offset_y_slider.valueChanged.connect(
-            lambda v: self.offset_y_value.setText(str(v))
-        )
 
         self.setLayout(layout)
 
