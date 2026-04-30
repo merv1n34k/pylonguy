@@ -4,14 +4,14 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QPushButton, QComboBox, QSpinBox, QDoubleSpinBox,
-    QCheckBox, QLineEdit, QScrollArea, QGroupBox,
+    QCheckBox, QLineEdit, QScrollArea, QGroupBox, QSlider,
 )
 import json
 import re
 from pathlib import Path
 import logging
 
-from ..constants import MAX_OFFSET_X, MAX_OFFSET_Y, MIN_ROI_WIDTH, MIN_ROI_HEIGHT
+from ..constants import MAX_OFFSET_X, MAX_OFFSET_Y, MIN_ROI_WIDTH, MIN_ROI_HEIGHT, OFFSET_SLIDER_STEP, SETTINGS_PANEL_WIDTH, Theme
 
 log = logging.getLogger("pylonguy")
 
@@ -20,6 +20,8 @@ class SettingsWidget(QWidget):
     """Settings panel with all controls"""
 
     camera_settings_changed = pyqtSignal()
+    offset_x_changed = pyqtSignal(int)
+    offset_y_changed = pyqtSignal(int)
 
     mode_changed = pyqtSignal(str)
     transform_changed = pyqtSignal(bool, bool, int)  # flip_x, flip_y, rotation
@@ -193,6 +195,7 @@ class SettingsWidget(QWidget):
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         content = QWidget()
+        content.setMinimumWidth(SETTINGS_PANEL_WIDTH - 30)
         layout = QVBoxLayout()
 
         # Connection controls
@@ -213,7 +216,15 @@ class SettingsWidget(QWidget):
         # Second row: Connect and Disconnect buttons
         button_layout = QHBoxLayout()
         self.btn_connect = QPushButton("Connect")
+        self.btn_connect.setStyleSheet(
+            f"QPushButton {{ background: {Theme.STATUS_GREEN}; color: {Theme.TEXT_WHITE}; }}"
+            f"QPushButton:hover {{ background: {Theme.STATUS_GREEN_DARK}; }}"
+        )
         self.btn_disconnect = QPushButton("Disconnect")
+        self.btn_disconnect.setStyleSheet(
+            f"QPushButton {{ background: {Theme.STATUS_RED}; color: {Theme.TEXT_WHITE}; }}"
+            f"QPushButton:hover {{ background: {Theme.STATUS_RED_DARK}; }}"
+        )
         button_layout.addWidget(self.btn_connect)
         button_layout.addWidget(self.btn_disconnect)
 
@@ -273,10 +284,25 @@ class SettingsWidget(QWidget):
         self.binning_vertical = QComboBox()
         self.binning_vertical.addItems(["1", "2", "3", "4"])
 
+        # Offset sliders
+        self.offset_x_slider = QSlider(Qt.Horizontal)
+        self.offset_x_slider.setRange(0, MAX_OFFSET_X)
+        self.offset_x_slider.setSingleStep(OFFSET_SLIDER_STEP)
+        self.offset_x_slider.setPageStep(OFFSET_SLIDER_STEP)
+        self.offset_x_slider.valueChanged.connect(self.offset_x_changed.emit)
+
+        self.offset_y_slider = QSlider(Qt.Horizontal)
+        self.offset_y_slider.setRange(0, MAX_OFFSET_Y)
+        self.offset_y_slider.setSingleStep(OFFSET_SLIDER_STEP)
+        self.offset_y_slider.setPageStep(OFFSET_SLIDER_STEP)
+        self.offset_y_slider.valueChanged.connect(self.offset_y_changed.emit)
+
         roi_layout.addRow("Width:", self.roi_width)
         roi_layout.addRow("Height:", self.roi_height)
         roi_layout.addRow("Offset X:", self.roi_offset_x)
+        roi_layout.addRow("Slide X:", self.offset_x_slider)
         roi_layout.addRow("Offset Y:", self.roi_offset_y)
+        roi_layout.addRow("Slide Y:", self.offset_y_slider)
         roi_layout.addRow("Binning H:", self.binning_horizontal)
         roi_layout.addRow("Binning V:", self.binning_vertical)
 

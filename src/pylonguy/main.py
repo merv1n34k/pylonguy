@@ -23,6 +23,7 @@ from .constants import (
     SIGNAL_TIMER_INTERVAL_MS,
     MAX_OFFSET_X,
     MAX_OFFSET_Y,
+    GLOBAL_QSS,
 )
 
 logging.basicConfig(
@@ -98,8 +99,8 @@ class PylonApp:
         self.window.preview.btn_capture.clicked.connect(self.capture_frame)
         self.window.preview.btn_record.clicked.connect(self.toggle_recording)
         self.window.preview.selection_changed.connect(self._on_selection_changed)
-        self.window.preview.offset_x_changed.connect(self._on_offset_x_changed)
-        self.window.preview.offset_y_changed.connect(self._on_offset_y_changed)
+        self.window.settings.offset_x_changed.connect(self._on_offset_x_changed)
+        self.window.settings.offset_y_changed.connect(self._on_offset_y_changed)
 
         # Connect log level change
         self.window.log.level_combo.currentTextChanged.connect(
@@ -294,6 +295,7 @@ class PylonApp:
         self.thread.start()
 
         self.window.preview.btn_live.setText("Stop Live")
+        self.window.preview.btn_live.setStyleSheet(self.window.preview.controls._BTN_GREEN)
         log.debug(
             "Live preview started"
             + (" (Waterfall mode)" if self.waterfall_mode else "")
@@ -311,6 +313,7 @@ class PylonApp:
         self.estimated_fps = 0.0
 
         self.window.preview.btn_live.setText("Start Live")
+        self.window.preview.btn_live.setStyleSheet(self.window.preview.controls._BTN_DEFAULT)
         self.window.preview.update_status(fps=0, recording=False, frames=0, elapsed=0)
         self.window.preview.show_message("No Camera")
         log.debug("Live preview stopped")
@@ -376,17 +379,17 @@ class PylonApp:
             offset_x_info = self.camera.get_parameter("OffsetX")
             offset_y_info = self.camera.get_parameter("OffsetY")
             if offset_x_info:
-                self.window.preview.offset_x_slider.setRange(
+                self.window.settings.offset_x_slider.setRange(
                     offset_x_info.get("min", 0), MAX_OFFSET_X
                 )
-                self.window.preview.offset_x_slider.setValue(
+                self.window.settings.offset_x_slider.setValue(
                     offset_x_info.get("value", 0)
                 )
             if offset_y_info:
-                self.window.preview.offset_y_slider.setRange(
+                self.window.settings.offset_y_slider.setRange(
                     offset_y_info.get("min", 0), MAX_OFFSET_Y
                 )
-                self.window.preview.offset_y_slider.setValue(
+                self.window.settings.offset_y_slider.setValue(
                     offset_y_info.get("value", 0)
                 )
 
@@ -530,6 +533,12 @@ class PylonApp:
 
     def capture_frame(self):
         """Capture single frame or waterfall with transforms applied"""
+        # Flash capture button red
+        btn = self.window.preview.btn_capture
+        btn.setStyleSheet(self.window.preview.controls._BTN_RED)
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(300, lambda: btn.setStyleSheet(self.window.preview.controls._BTN_DEFAULT))
+
         if self.waterfall_mode:
             # Capture from waterfall buffer
             frame = self.window.preview.get_waterfall_buffer()
@@ -654,6 +663,7 @@ class PylonApp:
 
         if self.thread.start_recording(worker, max_frames, max_time):
             self.window.preview.btn_record.setText("Stop Recording")
+            self.window.preview.btn_record.setStyleSheet(self.window.preview.controls._BTN_RED)
             if self.waterfall_mode:
                 log.info(
                     f"Waterfall recording started: {worker.output_path if hasattr(worker, 'output_path') else 'waterfall'}"
@@ -668,6 +678,7 @@ class PylonApp:
         if self.thread:
             frames = self.thread.stop_recording()
             self.window.preview.btn_record.setText("Record")
+            self.window.preview.btn_record.setStyleSheet(self.window.preview.controls._BTN_DEFAULT)
 
             self.window.settings.setLocked(False)
 
@@ -690,6 +701,11 @@ class PylonApp:
     def _on_selection_changed(self, rect):
         """Handle selection changes"""
         self.current_selection = rect
+        btn = self.window.preview.controls.btn_clear_selection
+        if rect and rect.isValid():
+            btn.setStyleSheet(self.window.preview.controls._BTN_RED)
+        else:
+            btn.setStyleSheet(self.window.preview.controls._BTN_DEFAULT)
 
     def _on_offset_x_changed(self, value):
         """Handle X offset slider change"""
@@ -734,6 +750,7 @@ def main():
     app.setApplicationName("PylonGuy")
     app.setApplicationDisplayName("PylonGuy")
     app.setStyle("Fusion")
+    app.setStyleSheet(GLOBAL_QSS)
 
     # Set application icon
     icon_path = Path(__file__).parent / "assets" / "icon.ico"

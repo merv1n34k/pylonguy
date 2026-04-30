@@ -8,16 +8,12 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QSlider,
     QSizePolicy,
 )
 import numpy as np
 import logging
 
 from ..constants import (
-    MAX_OFFSET_X,
-    MAX_OFFSET_Y,
-    OFFSET_SLIDER_STEP,
     CONTROLS_MAX_HEIGHT,
     Theme,
 )
@@ -401,7 +397,19 @@ class PreviewDisplay(QWidget):
 
 
 class PreviewControls(QWidget):
-    """Preview control panel - status, buttons, sliders"""
+    """Preview control panel - status and buttons"""
+
+    _BTN_DEFAULT = (
+        f"QPushButton {{ border: none; border-radius: 0; }}"
+    )
+    _BTN_GREEN = (
+        f"QPushButton {{ background: {Theme.STATUS_GREEN}; color: {Theme.TEXT_WHITE}; border: none; border-radius: 0; }}"
+        f"QPushButton:hover {{ background: {Theme.STATUS_GREEN_DARK}; }}"
+    )
+    _BTN_RED = (
+        f"QPushButton {{ background: {Theme.STATUS_RED}; color: {Theme.TEXT_WHITE}; border: none; border-radius: 0; }}"
+        f"QPushButton:hover {{ background: {Theme.STATUS_RED_DARK}; }}"
+    )
 
     def __init__(self):
         super().__init__()
@@ -420,12 +428,12 @@ class PreviewControls(QWidget):
 
         label = QLabel(f" {label_text} ")
         label.setStyleSheet(
-            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 5px 10px; font-weight: bold;"
+            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 8px 10px; font-weight: bold;"
         )
 
         value = QLabel(f" {initial_value} ")
         value.setStyleSheet(
-            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
+            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 12px 10px;"
         )
 
         layout.addWidget(label)
@@ -433,38 +441,6 @@ class PreviewControls(QWidget):
         widget.setLayout(layout)
 
         return widget, label, value
-
-    def _create_offset_slider(self, max_val: int):
-        """Create an offset slider with standard configuration.
-
-        Returns:
-            Tuple of (slider, value label)
-        """
-        slider = QSlider(Qt.Horizontal)
-        slider.setRange(0, max_val)
-        slider.setValue(0)
-        slider.setSingleStep(OFFSET_SLIDER_STEP)
-        slider.setPageStep(OFFSET_SLIDER_STEP)
-        slider.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
-                height: 6px;
-                background: {Theme.SLIDER_GROOVE};
-                border-radius: 3px;
-            }}
-            QSlider::handle:horizontal {{
-                width: 18px;
-                background: {Theme.ACCENT};
-                border-radius: 9px;
-                margin: -6px 0;
-            }}
-        """)
-
-        value_label = QLabel("0")
-        value_label.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 40px;")
-
-        slider.valueChanged.connect(lambda v: value_label.setText(str(v)))
-
-        return slider, value_label
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -474,7 +450,7 @@ class PreviewControls(QWidget):
         # Status bar
         status_widget = QWidget()
         status_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        status_widget.setStyleSheet(f"QWidget {{ background: {Theme.BG_DARK}; }}")
+        status_widget.setStyleSheet(f"QWidget {{ background: {Theme.BG_DARK}; border-top: 1px solid {Theme.BORDER_COOL}; }}")
 
         status_layout = QHBoxLayout()
         status_layout.setContentsMargins(0, 0, 0, 0)
@@ -503,29 +479,16 @@ class PreviewControls(QWidget):
         button_widget = QWidget()
         button_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         button_widget.setStyleSheet(f"""
-            QWidget {{
-                border-left: 1px solid #333;
-                border-right: 1px solid #333;
-                background: {Theme.BG_MEDIUM};
-            }}
+            QWidget {{ background: {Theme.BG_DARK}; border-top: 1px solid {Theme.BORDER_COOL}; }}
             QPushButton {{
-                background: {Theme.BG_CONTROL};
-                color: {Theme.TEXT_WHITE};
                 border: none;
-                font-weight: bold;
-                font-size: 12px;
-                padding: 10px;
-            }}
-            QPushButton:hover {{
-                background: {Theme.BG_CONTROL_HOVER};
-            }}
-            QPushButton:pressed {{
-                background: {Theme.BG_CONTROL_PRESSED};
+                border-radius: 0;
+                padding: 25px;
             }}
         """)
 
         button_layout = QHBoxLayout()
-        button_layout.setContentsMargins(1, 0, 1, 0)
+        button_layout.setContentsMargins(0, 0, 0, 0)
         button_layout.setSpacing(1)
 
         self.btn_live = QPushButton("Start Live")
@@ -533,47 +496,12 @@ class PreviewControls(QWidget):
         self.btn_record = QPushButton("Record")
         self.btn_clear_selection = QPushButton("Clear Selection")
 
-        button_layout.addWidget(self.btn_live)
-        button_layout.addWidget(self.btn_capture)
-        button_layout.addWidget(self.btn_record)
-        button_layout.addWidget(self.btn_clear_selection)
+        for btn in (self.btn_live, self.btn_capture, self.btn_record, self.btn_clear_selection):
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            button_layout.addWidget(btn, 1)
 
         button_widget.setLayout(button_layout)
         layout.addWidget(button_widget)
-
-        # Offset sliders
-        slider_widget = QWidget()
-        slider_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        slider_widget.setStyleSheet(f"QWidget {{ background: {Theme.BG_MEDIUM}; padding: 5px; }}")
-
-        slider_layout = QVBoxLayout()
-        slider_layout.setContentsMargins(10, 5, 10, 5)
-        slider_layout.setSpacing(5)
-
-        # Create offset sliders using factory method
-        self.offset_x_slider, self.offset_x_value = self._create_offset_slider(MAX_OFFSET_X)
-        self.offset_y_slider, self.offset_y_value = self._create_offset_slider(MAX_OFFSET_Y)
-
-        # X Offset layout
-        x_layout = QHBoxLayout()
-        x_label = QLabel("Offset X:")
-        x_label.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 60px;")
-        x_layout.addWidget(x_label)
-        x_layout.addWidget(self.offset_x_slider)
-        x_layout.addWidget(self.offset_x_value)
-
-        # Y Offset layout
-        y_layout = QHBoxLayout()
-        y_label = QLabel("Offset Y:")
-        y_label.setStyleSheet(f"color: {Theme.TEXT_WHITE}; min-width: 60px;")
-        y_layout.addWidget(y_label)
-        y_layout.addWidget(self.offset_y_slider)
-        y_layout.addWidget(self.offset_y_value)
-
-        slider_layout.addLayout(x_layout)
-        slider_layout.addLayout(y_layout)
-        slider_widget.setLayout(slider_layout)
-        layout.addWidget(slider_widget)
 
         self.setLayout(layout)
 
@@ -586,12 +514,12 @@ class PreviewControls(QWidget):
             if kwargs["recording"]:
                 self.rec_status.setText(" ON ")
                 self.rec_status.setStyleSheet(
-                    f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT_RECORDING}; padding: 5px 10px;"
+                    f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT_RECORDING}; padding: 12px 10px;"
                 )
             else:
                 self.rec_status.setText(" OFF ")
                 self.rec_status.setStyleSheet(
-                    f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 5px 10px;"
+                    f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 12px 10px;"
                 )
 
         if "frames" in kwargs:
@@ -622,8 +550,6 @@ class PreviewWidget(QWidget):
 
     # Forward signals from internal widgets
     selection_changed = pyqtSignal(object)
-    offset_x_changed = pyqtSignal(int)
-    offset_y_changed = pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
@@ -648,17 +574,11 @@ class PreviewWidget(QWidget):
         # Connect internal signals
         self.display.selection_changed.connect(self._on_selection_changed)
         self.controls.btn_clear_selection.clicked.connect(self.clear_selection)
-        self.controls.offset_x_slider.valueChanged.connect(self.offset_x_changed.emit)
-        self.controls.offset_y_slider.valueChanged.connect(self.offset_y_changed.emit)
 
         # Create references for backward compatibility
         self.btn_live = self.controls.btn_live
         self.btn_capture = self.controls.btn_capture
         self.btn_record = self.controls.btn_record
-        self.offset_x_slider = self.controls.offset_x_slider
-        self.offset_y_slider = self.controls.offset_y_slider
-        self.offset_x_value = self.controls.offset_x_value
-        self.offset_y_value = self.controls.offset_y_value
 
         # These are needed by main.py
         self.fps_value = self.controls.fps_value

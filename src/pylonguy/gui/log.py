@@ -42,8 +42,6 @@ class LogWidget(QWidget):
         self.level_combo = QComboBox()
         self.level_combo.addItems(["INFO", "DEBUG"])
         self.level_combo.setCurrentText("INFO")
-        self.level_combo.setStyleSheet("color: white;")
-
         # Don't connect here - let app.py handle it
         header_layout.addWidget(QLabel("Level:"))
         header_layout.addWidget(self.level_combo)
