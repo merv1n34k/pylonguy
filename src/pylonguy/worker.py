@@ -1,6 +1,8 @@
 """Worker module - frame and waterfall writer with post-processing"""
 
+import shutil
 import subprocess
+import tempfile
 import numpy as np
 from pathlib import Path
 from queue import Queue, Empty, Full
@@ -14,14 +16,17 @@ log = logging.getLogger("pylonguy")
 
 
 class VideoWorker:
-    """Frame writer that dumps frames then creates video"""
+    """Frame writer that dumps frames to temp dir then creates video"""
 
-    def __init__(self, frames_dir: str, width: int, height: int, fps: float):
-        # Frames directory path
-        self.frames_dir = Path(frames_dir)
+    def __init__(self, output_dir: str, prefix: str, width: int, height: int, fps: float):
+        self.output_dir = Path(output_dir)
+        self.prefix = prefix
         self.width = width
         self.height = height
         self.fps = fps
+
+        # Temp dir created on start(), cleaned up after ffmpeg
+        self.frames_dir = None
 
         # Simple queue for frame writing
         self.queue = Queue(maxsize=WRITER_QUEUE_SIZE)
@@ -32,8 +37,8 @@ class VideoWorker:
     def start(self) -> bool:
         """Start frame writer thread"""
         try:
-            # Create frames directory
-            self.frames_dir.mkdir(parents=True, exist_ok=True)
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            self.frames_dir = Path(tempfile.mkdtemp(prefix="pylonguy_", dir=self.output_dir))
 
             self._stop_event.clear()
             self.frame_count = 0
@@ -109,25 +114,23 @@ class VideoWorker:
                 log.debug(f"Write error: {e}")
 
     def _make_video(self) -> str:
-        """Create video from raw frames"""
-        # Get frame files to check if any exist
+        """Create video from raw frames, clean up temp dir after"""
         frames = sorted(self.frames_dir.glob("*.raw"))
         if not frames:
             log.error("No frames to convert")
+            shutil.rmtree(self.frames_dir, ignore_errors=True)
             return ""
 
-        # Video output path (in parent directory of frames)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        video_path = self.frames_dir.parent / f"vid_{timestamp}.avi"
+        video_path = self.output_dir / f"{self.prefix}_{timestamp}.avi"
 
         try:
             log.info(
-                f"Creating video from {len(frames)} frames at {self.fps} fps (background)..."
+                f"Creating video from {len(frames)} frames at {self.fps} fps..."
             )
 
             input_pattern = str(self.frames_dir / "%08d.raw")
 
-            # FFmpeg command using image2 demuxer for raw video frames
             cmd = [
                 "ffmpeg",
                 "-y",
@@ -148,7 +151,15 @@ class VideoWorker:
                 str(video_path),
             ]
 
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            # Cleanup thread: wait for ffmpeg, then handle temp dir
+            cleanup = Thread(
+                target=self._cleanup_after_encode,
+                args=(proc, self.frames_dir, video_path),
+                daemon=True,
+            )
+            cleanup.start()
 
             log.info(f"Video processing started: {video_path}")
             return str(video_path)
@@ -156,6 +167,25 @@ class VideoWorker:
         except Exception as e:
             log.error(f"Failed to start ffmpeg: {e}")
             return ""
+
+    @staticmethod
+    def _cleanup_after_encode(proc, frames_dir, video_path):
+        """Wait for ffmpeg and clean up temp frames"""
+        video_path = Path(video_path)
+        try:
+            rc = proc.wait()
+            if rc == 0:
+                shutil.rmtree(frames_dir, ignore_errors=True)
+                log.info(f"Video ready: {video_path}")
+            else:
+                # FFmpeg failed — keep raw frames, remove broken video
+                if video_path.exists():
+                    video_path.unlink()
+                raw_dir = video_path.parent / f"raw_{video_path.stem}"
+                frames_dir.rename(raw_dir)
+                log.error(f"FFmpeg failed (exit {rc}), raw frames kept: {raw_dir}")
+        except Exception as e:
+            log.error(f"Cleanup error: {e}")
 
 
 class WaterfallWorker:

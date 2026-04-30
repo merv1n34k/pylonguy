@@ -642,12 +642,10 @@ class PylonApp:
 
             worker = WaterfallWorker(str(waterfall_path), w)
         else:
-            # Create unique frames subdirectory for video
-            timestamp = time.strftime("%Y%m%d_%H%M%S_%f")[:-3]
-            frames_dir = base_path / f"raw_{timestamp}"
-
             worker = VideoWorker(
-                str(frames_dir), w, h, settings["capture"]["video_fps"]
+                str(base_path),
+                settings["capture"]["video_prefix"],
+                w, h, settings["capture"]["video_fps"],
             )
 
         # Start recording with limits
@@ -661,7 +659,7 @@ class PylonApp:
                     f"Waterfall recording started: {worker.output_path if hasattr(worker, 'output_path') else 'waterfall'}"
                 )
             else:
-                log.info(f"Recording started: {frames_dir}")
+                log.info(f"Recording started: {base_path}")
         else:
             log.error("Failed to start recording")
 
