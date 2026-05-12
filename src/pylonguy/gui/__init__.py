@@ -13,7 +13,8 @@ from PyQt5.QtWidgets import (
 from .preview import PreviewWidget
 from .settings import SettingsWidget
 from .log import LogWidget
-from ..constants import WINDOW_DEFAULT_GEOMETRY, Theme
+from ..constants import WINDOW_DEFAULT_GEOMETRY
+from ..theme import Theme
 
 
 class DottedSplitterHandle(QSplitterHandle):

@@ -15,8 +15,8 @@ import logging
 
 from ..constants import (
     CONTROLS_MAX_HEIGHT,
-    Theme,
 )
+from ..theme import Theme, button_qss, value_label_qss
 
 log = logging.getLogger("pylonguy")
 
@@ -399,17 +399,9 @@ class PreviewDisplay(QWidget):
 class PreviewControls(QWidget):
     """Preview control panel - status and buttons"""
 
-    _BTN_DEFAULT = (
-        f"QPushButton {{ border: none; border-radius: 0; }}"
-    )
-    _BTN_GREEN = (
-        f"QPushButton {{ background: {Theme.STATUS_GREEN}; color: {Theme.TEXT_WHITE}; border: none; border-radius: 0; }}"
-        f"QPushButton:hover {{ background: {Theme.STATUS_GREEN_DARK}; }}"
-    )
-    _BTN_RED = (
-        f"QPushButton {{ background: {Theme.STATUS_RED}; color: {Theme.TEXT_WHITE}; border: none; border-radius: 0; }}"
-        f"QPushButton:hover {{ background: {Theme.STATUS_RED_DARK}; }}"
-    )
+    _BTN_DEFAULT = "QPushButton { border: none; border-radius: 0; }"
+    _BTN_GREEN = button_qss("success", flat=True)
+    _BTN_RED = button_qss("danger", flat=True)
 
     def __init__(self):
         super().__init__()
@@ -432,9 +424,7 @@ class PreviewControls(QWidget):
         )
 
         value = QLabel(f" {initial_value} ")
-        value.setStyleSheet(
-            f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 12px 10px;"
-        )
+        value.setStyleSheet(value_label_qss("success"))
 
         layout.addWidget(label)
         layout.addWidget(value, 1)
@@ -483,7 +473,7 @@ class PreviewControls(QWidget):
             QPushButton {{
                 border: none;
                 border-radius: 0;
-                padding: 25px;
+                padding: 8px 10px;
             }}
         """)
 
@@ -513,14 +503,10 @@ class PreviewControls(QWidget):
         if "recording" in kwargs:
             if kwargs["recording"]:
                 self.rec_status.setText(" ON ")
-                self.rec_status.setStyleSheet(
-                    f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT_RECORDING}; padding: 12px 10px;"
-                )
+                self.rec_status.setStyleSheet(value_label_qss("danger"))
             else:
                 self.rec_status.setText(" OFF ")
-                self.rec_status.setStyleSheet(
-                    f"background: {Theme.BG_DARKER}; color: {Theme.VALUE_TEXT}; padding: 12px 10px;"
-                )
+                self.rec_status.setStyleSheet(value_label_qss("success"))
 
         if "frames" in kwargs:
             self.rec_frames.setText(f" {kwargs['frames']} ")

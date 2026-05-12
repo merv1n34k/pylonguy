@@ -23,8 +23,8 @@ from .constants import (
     SIGNAL_TIMER_INTERVAL_MS,
     MAX_OFFSET_X,
     MAX_OFFSET_Y,
-    GLOBAL_QSS,
 )
+from .theme import GLOBAL_QSS
 
 logging.basicConfig(
     level=logging.DEBUG,
