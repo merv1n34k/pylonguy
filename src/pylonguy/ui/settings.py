@@ -11,7 +11,15 @@ import re
 from pathlib import Path
 import logging
 
-from ..constants import MAX_OFFSET_X, MAX_OFFSET_Y, MIN_ROI_WIDTH, MIN_ROI_HEIGHT, OFFSET_SLIDER_STEP, SETTINGS_PANEL_WIDTH, Theme
+from ..constants import (
+    MAX_OFFSET_X,
+    MAX_OFFSET_Y,
+    MIN_ROI_WIDTH,
+    MIN_ROI_HEIGHT,
+    OFFSET_SLIDER_STEP,
+    SETTINGS_PANEL_WIDTH,
+)
+from ..theme import button_qss
 
 log = logging.getLogger("pylonguy")
 
@@ -216,15 +224,9 @@ class SettingsWidget(QWidget):
         # Second row: Connect and Disconnect buttons
         button_layout = QHBoxLayout()
         self.btn_connect = QPushButton("Connect")
-        self.btn_connect.setStyleSheet(
-            f"QPushButton {{ background: {Theme.STATUS_GREEN}; color: {Theme.TEXT_WHITE}; }}"
-            f"QPushButton:hover {{ background: {Theme.STATUS_GREEN_DARK}; }}"
-        )
+        self.btn_connect.setStyleSheet(button_qss("success"))
         self.btn_disconnect = QPushButton("Disconnect")
-        self.btn_disconnect.setStyleSheet(
-            f"QPushButton {{ background: {Theme.STATUS_RED}; color: {Theme.TEXT_WHITE}; }}"
-            f"QPushButton:hover {{ background: {Theme.STATUS_RED_DARK}; }}"
-        )
+        self.btn_disconnect.setStyleSheet(button_qss("danger"))
         button_layout.addWidget(self.btn_connect)
         button_layout.addWidget(self.btn_disconnect)
 
