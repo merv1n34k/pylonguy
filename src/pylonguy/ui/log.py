@@ -1,7 +1,7 @@
 """Log widget - Application logging display"""
 
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -22,7 +22,7 @@ log = logging.getLogger("pylonguy")
 class LogWidget(QWidget):
     """Log display widget with controls"""
 
-    append_text = pyqtSignal(str)
+    append_text = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -73,7 +73,7 @@ class LogWidget(QWidget):
         self.append_text.emit(message)
 
     def _append_text_safe(self, message: str):
-        """Append text in GUI thread"""
+        """Append text in UI thread"""
         try:
             self.log.append(message)
             scrollbar = self.log.verticalScrollBar()

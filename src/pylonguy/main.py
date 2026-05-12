@@ -7,13 +7,12 @@ import time
 import logging
 import numpy as np
 from pathlib import Path
-from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication, QMessageBox
-from PyQt5.QtGui import QImage, QTransform
-from PyQt5.QtGui import QIcon
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QIcon, QImage
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from .camera import Camera
-from .gui import MainWindow
+from .ui import MainWindow
 from .thread import CameraThread
 from .worker import VideoWorker, WaterfallWorker
 from .constants import (
@@ -43,7 +42,7 @@ class PylonApp:
         self.window = MainWindow()
         self.last_frame = None
         self.current_selection = None
-        self.gui_handler = None
+        self.ui_handler = None
         self.waterfall_mode = False
         self.timeout = CAMERA_APPLY_TIMEOUT
         self.missing_deps = missing_deps or []
@@ -86,7 +85,7 @@ class PylonApp:
         return True
 
     def _connect_signals(self):
-        """Connect GUI signals"""
+        """Connect UI signals"""
         self.window.settings.btn_connect.clicked.connect(self.connect_camera)
         self.window.settings.btn_disconnect.clicked.connect(self.disconnect_camera)
         self.window.settings.btn_refresh.clicked.connect(self._update_camera_list)
@@ -123,7 +122,7 @@ class PylonApp:
         log.info(f"Camera list refreshed: {len(cameras)} camera(s) found")
 
     def _setup_logging(self):
-        """Route logging to GUI"""
+        """Route logging to UI"""
 
         class GuiLogHandler(logging.Handler):
             def __init__(self, widget):
@@ -134,24 +133,24 @@ class PylonApp:
                 msg = self.format(record)
                 self.widget.add(msg)
 
-        self.gui_handler = GuiLogHandler(self.window.log)
-        self.gui_handler.setFormatter(
+        self.ui_handler = GuiLogHandler(self.window.log)
+        self.ui_handler.setFormatter(
             logging.Formatter("%(asctime)s - %(message)s", "%H:%M:%S")
         )
-        self.gui_handler.setLevel(logging.INFO)
-        log.addHandler(self.gui_handler)
+        self.ui_handler.setLevel(logging.INFO)
+        log.addHandler(self.ui_handler)
         log.setLevel(logging.INFO)
 
     def _on_log_level_changed(self, level_text):
-        """Handle log level change from GUI"""
+        """Handle log level change from UI"""
         level_map = {"DEBUG": logging.DEBUG, "INFO": logging.INFO}
 
         level = level_map.get(level_text, logging.INFO)
 
         # Update both logger and handler levels
         log.setLevel(level)
-        if self.gui_handler:
-            self.gui_handler.setLevel(level)
+        if self.ui_handler:
+            self.ui_handler.setLevel(level)
 
         log.info(f"Log level changed to {level_text}")
 
@@ -329,7 +328,7 @@ class PylonApp:
             return
 
         if self.camera.open(camera_index, apply_defaults=True):
-            # Update GUI parameter limits from camera
+            # Update UI parameter limits from camera
             params_to_update = [
                 "Width",
                 "Height",
@@ -536,8 +535,12 @@ class PylonApp:
         # Flash capture button red
         btn = self.window.preview.btn_capture
         btn.setStyleSheet(self.window.preview.controls._BTN_RED)
-        from PyQt5.QtCore import QTimer
-        QTimer.singleShot(300, lambda: btn.setStyleSheet(self.window.preview.controls._BTN_DEFAULT))
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(
+            300,
+            lambda: btn.setStyleSheet(self.window.preview.controls._BTN_DEFAULT),
+        )
 
         if self.waterfall_mode:
             # Capture from waterfall buffer
@@ -589,9 +592,13 @@ class PylonApp:
                 frame = np.ascontiguousarray(frame)
 
             if len(frame.shape) == 2:
-                img = QImage(frame.data, w, h, w, QImage.Format_Grayscale8)
+                img = QImage(
+                    frame.data, w, h, w, QImage.Format.Format_Grayscale8
+                )
             else:
-                img = QImage(frame.data, w, h, w * 3, QImage.Format_RGB888)
+                img = QImage(
+                    frame.data, w, h, w * 3, QImage.Format.Format_RGB888
+                )
 
             if img.save(path):
                 log.info(
@@ -761,15 +768,15 @@ def main():
     missing = check_dependencies()
     if missing:
         msg = QMessageBox()
-        msg.setIcon(QMessageBox.Warning)
+        msg.setIcon(QMessageBox.Icon.Warning)
         msg.setWindowTitle("Missing Dependencies")
         msg.setText(f"Required dependencies not found: {', '.join(missing)}")
         msg.setInformativeText(
             "Video recording will not work without ffmpeg.\n\n"
             "Install ffmpeg and ensure it's in your PATH."
         )
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
 
     pylon_app = PylonApp(missing_deps=missing)
     pylon_app.run()
@@ -784,7 +791,7 @@ def main():
 
     app.aboutToQuit.connect(lambda: pylon_app.disconnect_camera())
 
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

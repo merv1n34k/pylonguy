@@ -1,8 +1,8 @@
-"""GUI module - Main interface exports"""
+"""UI module - Main interface exports"""
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPainter, QColor
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -27,7 +27,7 @@ class DottedSplitterHandle(QSplitterHandle):
         super().__init__(orientation, parent)
         self._collapsed = False
         self._saved_size = 400
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def sizeHint(self):
         return super().sizeHint().expandedTo(
@@ -35,19 +35,18 @@ class DottedSplitterHandle(QSplitterHandle):
         )
 
     def minimumSizeHint(self):
-        from PyQt5.QtCore import QSize
         return QSize(self.HANDLE_WIDTH, 0)
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor(Theme.BG_DARK))
 
         # Draw 3 white dots vertically centered
         cx = self.width() // 2
         cy = self.height() // 2
         painter.setBrush(QColor(Theme.TEXT_WHITE))
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         for dy in (-self.DOT_SPACING, 0, self.DOT_SPACING):
             painter.drawEllipse(
                 cx - self.DOT_RADIUS,
@@ -58,7 +57,7 @@ class DottedSplitterHandle(QSplitterHandle):
 
     def mousePressEvent(self, event):
         # Toggle instead of drag
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self._toggle_panel()
 
     def mouseMoveEvent(self, event):
@@ -110,7 +109,7 @@ class MainWindow(QMainWindow):
         right_widget.setLayout(right_layout)
 
         # Splitter layout
-        splitter = CollapsibleSplitter(Qt.Horizontal)
+        splitter = CollapsibleSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self.preview)
         splitter.addWidget(right_widget)
         splitter.setCollapsible(0, False)

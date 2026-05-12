@@ -1,6 +1,6 @@
 # PylonGUY
 
-Your best friend for high-performance camera control for Basler cameras with high-speed recording capabilities and simple GUI.
+Your best friend for high-performance camera control for Basler cameras with high-speed recording capabilities and simple UI.
 
 ![preview](https://raw.githubusercontent.com/merv1n34k/pylonguy/refs/heads/master/docs/preview.png)
 

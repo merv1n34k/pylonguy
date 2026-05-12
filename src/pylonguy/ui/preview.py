@@ -1,8 +1,8 @@
 """Preview widget - Camera display with zero-copy rendering"""
 
-from PyQt5.QtCore import Qt, pyqtSignal, QRect
-from PyQt5.QtGui import QImage, QPainter, QColor, QPen, QTransform, QFont
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import QRect, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QTransform
+from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -24,7 +24,7 @@ log = logging.getLogger("pylonguy")
 class PreviewDisplay(QWidget):
     """Pure zero-copy frame display"""
 
-    selection_changed = pyqtSignal(object)
+    selection_changed = Signal(object)
 
     def __init__(self):
         super().__init__()
@@ -61,7 +61,7 @@ class PreviewDisplay(QWidget):
         self.setMouseTracking(True)
         self.setAutoFillBackground(True)
         pal = self.palette()
-        pal.setColor(self.backgroundRole(), Qt.black)
+        pal.setColor(self.backgroundRole(), Qt.GlobalColor.black)
         self.setPalette(pal)
 
     def setFrame(self, frame: np.ndarray):
@@ -124,15 +124,17 @@ class PreviewDisplay(QWidget):
         painter = QPainter(self)
 
         # Always clear background
-        painter.fillRect(self.rect(), Qt.black)
+        painter.fillRect(self.rect(), Qt.GlobalColor.black)
 
         # Draw message if set
         if self.message:
-            painter.setPen(Qt.white)
+            painter.setPen(Qt.GlobalColor.white)
             font = QFont()
             font.setPointSize(20)
             painter.setFont(font)
-            painter.drawText(self.rect(), Qt.AlignCenter, self.message)
+            painter.drawText(
+                self.rect(), Qt.AlignmentFlag.AlignCenter, self.message
+            )
             return
 
         # Draw frame if available
@@ -143,12 +145,20 @@ class PreviewDisplay(QWidget):
             if len(self.current_frame.shape) == 2:
                 # Grayscale
                 qimage = QImage(
-                    self.current_frame.data, w, h, w, QImage.Format_Grayscale8
+                    self.current_frame.data,
+                    w,
+                    h,
+                    w,
+                    QImage.Format.Format_Grayscale8,
                 )
             else:
                 # RGB
                 qimage = QImage(
-                    self.current_frame.data, w, h, w * 3, QImage.Format_RGB888
+                    self.current_frame.data,
+                    w,
+                    h,
+                    w * 3,
+                    QImage.Format.Format_RGB888,
                 )
 
             # Calculate display rectangle
@@ -190,8 +200,8 @@ class PreviewDisplay(QWidget):
                 scaled_image = qimage.scaled(
                     self.frame_rect.width(),
                     self.frame_rect.height(),
-                    Qt.KeepAspectRatio,
-                    Qt.FastTransformation,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.FastTransformation,
                 )
                 painter.drawImage(offset_rect, scaled_image)
                 painter.restore()
@@ -200,8 +210,8 @@ class PreviewDisplay(QWidget):
                 scaled_image = qimage.scaled(
                     self.frame_rect.width(),
                     self.frame_rect.height(),
-                    Qt.KeepAspectRatio,
-                    Qt.FastTransformation,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.FastTransformation,
                 )
                 painter.drawImage(self.frame_rect, scaled_image)
 
@@ -215,7 +225,7 @@ class PreviewDisplay(QWidget):
         if self.selection_rect or (
             self.selecting and self.select_start and self.mouse_pos
         ):
-            pen = QPen(QColor(0, 180, 255), 2, Qt.DashLine)
+            pen = QPen(QColor(0, 180, 255), 2, Qt.PenStyle.DashLine)
             pen.setDashPattern([5, 3])
             painter.setPen(pen)
             painter.setBrush(QColor(0, 120, 255, 30))
@@ -230,7 +240,9 @@ class PreviewDisplay(QWidget):
         if (
             self.ruler_v or self.ruler_h or self.ruler_radial
         ) and not self.frame_rect.isEmpty():
-            painter.setPen(QPen(QColor(255, 255, 0, 180), 1, Qt.SolidLine))
+            painter.setPen(
+                QPen(QColor(255, 255, 0, 180), 1, Qt.PenStyle.SolidLine)
+            )
 
             cx = self.frame_rect.center().x()
             cy = self.frame_rect.center().y()
@@ -288,7 +300,7 @@ class PreviewDisplay(QWidget):
                         int(y_label - 5),
                         30,
                         10,
-                        Qt.AlignCenter,
+                        Qt.AlignmentFlag.AlignCenter,
                         label_text,
                     )
                     painter.setPen(QPen(QColor(255, 255, 0), 1))
@@ -297,7 +309,7 @@ class PreviewDisplay(QWidget):
                         int(y_label - 6),
                         28,
                         10,
-                        Qt.AlignCenter,
+                        Qt.AlignmentFlag.AlignCenter,
                         label_text,
                     )
 
@@ -315,20 +327,20 @@ class PreviewDisplay(QWidget):
 
     def mousePressEvent(self, event):
         """Start selection"""
-        if event.button() == Qt.LeftButton:
-            self.select_start = event.pos()
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.select_start = event.position().toPoint()
             self.selecting = True
             self.selection_rect = None
 
     def mouseMoveEvent(self, event):
         """Track selection"""
-        self.mouse_pos = event.pos()
+        self.mouse_pos = event.position().toPoint()
         if self.selecting:
             self.update()
 
     def mouseReleaseEvent(self, event):
         """Finish selection"""
-        if event.button() == Qt.LeftButton and self.selecting:
+        if event.button() == Qt.MouseButton.LeftButton and self.selecting:
             self.selecting = False
             if (
                 self.select_start
@@ -549,7 +561,7 @@ class PreviewWidget(QWidget):
     """Container widget that combines display and controls"""
 
     # Forward signals from internal widgets
-    selection_changed = pyqtSignal(object)
+    selection_changed = Signal(object)
 
     def __init__(self):
         super().__init__()

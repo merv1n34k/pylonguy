@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pylonguy"
 version = "1.10.0"
-description = "PyQt5 wrapper for pypylon SDK for Basler camera manipulation, aimed for microfluidics and slow motion."
+description = "PySide6 wrapper for pypylon SDK for Basler camera manipulation, aimed for microfluidics and slow motion."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
@@ -13,7 +13,7 @@ dependencies = [
     "numpy>=2.3.3",
     "pillow>=11.3.0",
     "pypylon>=4.2.0",
-    "pyqt5>=5.15.11",
+    "pyside6>=6.7",
 ]
 
 [project.urls]

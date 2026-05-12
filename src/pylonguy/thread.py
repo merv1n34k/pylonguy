@@ -1,6 +1,6 @@
 """Thread module - camera acquisition thread with waterfall support"""
 
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 from threading import Event
 import numpy as np
 import time
@@ -15,9 +15,9 @@ class CameraThread(QThread):
     """Camera acquisition thread with waterfall support"""
 
     # Signals
-    frame_ready = pyqtSignal(np.ndarray)
-    stats_update = pyqtSignal(dict)
-    recording_stopped = pyqtSignal()
+    frame_ready = Signal(np.ndarray)
+    stats_update = Signal(dict)
+    recording_stopped = Signal()
 
     def __init__(self, camera, waterfall_mode: bool = False):
         super().__init__()

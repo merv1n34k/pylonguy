@@ -1,7 +1,7 @@
 """Settings widget - Camera controls and presets"""
 
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QPushButton, QComboBox, QSpinBox, QDoubleSpinBox,
     QCheckBox, QLineEdit, QScrollArea, QGroupBox, QSlider,
@@ -19,13 +19,13 @@ log = logging.getLogger("pylonguy")
 class SettingsWidget(QWidget):
     """Settings panel with all controls"""
 
-    camera_settings_changed = pyqtSignal()
-    offset_x_changed = pyqtSignal(int)
-    offset_y_changed = pyqtSignal(int)
+    camera_settings_changed = Signal()
+    offset_x_changed = Signal(int)
+    offset_y_changed = Signal(int)
 
-    mode_changed = pyqtSignal(str)
-    transform_changed = pyqtSignal(bool, bool, int)  # flip_x, flip_y, rotation
-    ruler_changed = pyqtSignal(bool, bool, bool)  # ruler v, h, radial
+    mode_changed = Signal(str)
+    transform_changed = Signal(bool, bool, int)  # flip_x, flip_y, rotation
+    ruler_changed = Signal(bool, bool, bool)  # ruler v, h, radial
 
     def __init__(self):
         super().__init__()
@@ -191,8 +191,8 @@ class SettingsWidget(QWidget):
     def init_ui(self):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
         content = QWidget()
         content.setMinimumWidth(SETTINGS_PANEL_WIDTH - 30)
@@ -285,13 +285,13 @@ class SettingsWidget(QWidget):
         self.binning_vertical.addItems(["1", "2", "3", "4"])
 
         # Offset sliders
-        self.offset_x_slider = QSlider(Qt.Horizontal)
+        self.offset_x_slider = QSlider(Qt.Orientation.Horizontal)
         self.offset_x_slider.setRange(0, MAX_OFFSET_X)
         self.offset_x_slider.setSingleStep(OFFSET_SLIDER_STEP)
         self.offset_x_slider.setPageStep(OFFSET_SLIDER_STEP)
         self.offset_x_slider.valueChanged.connect(self.offset_x_changed.emit)
 
-        self.offset_y_slider = QSlider(Qt.Horizontal)
+        self.offset_y_slider = QSlider(Qt.Orientation.Horizontal)
         self.offset_y_slider.setRange(0, MAX_OFFSET_Y)
         self.offset_y_slider.setSingleStep(OFFSET_SLIDER_STEP)
         self.offset_y_slider.setPageStep(OFFSET_SLIDER_STEP)
@@ -571,7 +571,7 @@ class SettingsWidget(QWidget):
             else:
                 widget.setEnabled(False)
                 widget.setToolTip(f"{param_name} not supported by this camera")
-            log.debug(f"GUI - Disabled {param_name} - not available in camera")
+            log.debug(f"UI - Disabled {param_name} - not available in camera")
 
     def get_settings(self) -> dict:
         """Get all settings as dictionary"""
