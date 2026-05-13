@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pylonguy"
-version = "1.10.0"
+version = "2.0.0"
 description = "DropletUI frontend for pypylon SDK for Basler camera manipulation, aimed for microfluidics and slow motion."
 readme = "README.md"
 license = "MIT"
