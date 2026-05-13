@@ -1,20 +1,16 @@
 """Log widget - Application logging display"""
 
+import dropletui as ui
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QLabel,
     QTextEdit,
-    QPushButton,
-    QComboBox,
 )
 from pathlib import Path
 import logging
 import time
-
-from ..constants import LOG_MAX_HEIGHT
 
 log = logging.getLogger("pylonguy")
 
@@ -35,23 +31,22 @@ class LogWidget(QWidget):
         # Header with controls
         header_layout = QHBoxLayout()
 
-        header_layout.addWidget(QLabel("Log"))
+        header_layout.addWidget(ui.status_label("Log", kind="default", small=False))
         header_layout.addStretch()
 
         # Log level selector
-        self.level_combo = QComboBox()
-        self.level_combo.addItems(["INFO", "DEBUG"])
+        self.level_combo = ui.combo_box(["INFO", "DEBUG"])
         self.level_combo.setCurrentText("INFO")
         # Don't connect here - let app.py handle it
-        header_layout.addWidget(QLabel("Level:"))
+        header_layout.addWidget(ui.status_label("Level:", kind="muted"))
         header_layout.addWidget(self.level_combo)
 
         # Control buttons
-        self.btn_clear = QPushButton("Clear")
+        self.btn_clear = ui.button("Clear")
         self.btn_clear.clicked.connect(self.clear_log)
         header_layout.addWidget(self.btn_clear)
 
-        self.btn_save = QPushButton("Save")
+        self.btn_save = ui.button("Save", variant="primary")
         self.btn_save.clicked.connect(self.save_log)
         header_layout.addWidget(self.btn_save)
 
@@ -60,7 +55,6 @@ class LogWidget(QWidget):
         # Log display
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumHeight(LOG_MAX_HEIGHT)
         layout.addWidget(self.log)
 
         self.setLayout(layout)

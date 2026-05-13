@@ -1,10 +1,11 @@
 """Settings widget - Camera controls and presets"""
 
+import dropletui as ui
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QPushButton, QComboBox, QSpinBox, QDoubleSpinBox,
-    QCheckBox, QLineEdit, QScrollArea, QGroupBox, QSlider,
+    QWidget, QVBoxLayout, QHBoxLayout,
+    QComboBox, QSpinBox, QDoubleSpinBox,
+    QScrollArea,
 )
 import json
 import re
@@ -17,9 +18,7 @@ from ..constants import (
     MIN_ROI_WIDTH,
     MIN_ROI_HEIGHT,
     OFFSET_SLIDER_STEP,
-    SETTINGS_PANEL_WIDTH,
 )
-from ..theme import button_qss
 
 log = logging.getLogger("pylonguy")
 
@@ -203,100 +202,85 @@ class SettingsWidget(QWidget):
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
         content = QWidget()
-        content.setMinimumWidth(SETTINGS_PANEL_WIDTH - 30)
         layout = QVBoxLayout()
 
         # Connection controls
-        conn_group = QGroupBox("Connection")
-        conn_layout = QVBoxLayout()
+        conn_group, conn_layout = ui.section("Connection")
 
         # First row: Camera selection and load defaults checkbox
         select_layout = QHBoxLayout()
-        self.camera_combo = QComboBox()
-        self.camera_combo.addItem("Detecting...")
+        self.camera_combo = ui.combo_box(["Detecting..."])
         select_layout.addWidget(self.camera_combo, 1)
-        self.btn_refresh = QPushButton("Refresh")
+        self.btn_refresh = ui.button("Refresh")
         select_layout.addWidget(self.btn_refresh)
-        self.auto_apply_check = QCheckBox("Auto-apply")
-        self.auto_apply_check.setChecked(True)
+        self.auto_apply_check = ui.check_box("Auto-apply", checked=True)
         select_layout.addWidget(self.auto_apply_check)
 
         # Second row: Connect and Disconnect buttons
         button_layout = QHBoxLayout()
-        self.btn_connect = QPushButton("Connect")
-        self.btn_connect.setStyleSheet(button_qss("success"))
-        self.btn_disconnect = QPushButton("Disconnect")
-        self.btn_disconnect.setStyleSheet(button_qss("danger"))
+        self.btn_connect = ui.button("Connect", variant="success")
+        self.btn_disconnect = ui.button("Disconnect", variant="danger")
         button_layout.addWidget(self.btn_connect)
         button_layout.addWidget(self.btn_disconnect)
 
         conn_layout.addLayout(select_layout)
         conn_layout.addLayout(button_layout)
-        conn_group.setLayout(conn_layout)
         layout.addWidget(conn_group)
 
         # Preset controls
-        preset_group = QGroupBox("Presets")
-        preset_layout = QFormLayout()
+        preset_group = ui.form_panel("Presets", [])
+        preset_layout = preset_group.layout()
 
         # First row: select preset and apply button
         preset_select_layout = QHBoxLayout()
-        self.preset_combo = QComboBox()
+        self.preset_combo = ui.combo_box()
         self.preset_combo.addItems(sorted(self.presets.keys()))
-        self.btn_apply_preset = QPushButton("Apply Preset")
+        self.btn_apply_preset = ui.button("Apply Preset", variant="primary")
         self.btn_apply_preset.clicked.connect(self.apply_preset)
         preset_select_layout.addWidget(self.preset_combo)
         preset_select_layout.addWidget(self.btn_apply_preset)
 
         # Second row: preset name and save button
         preset_save_layout = QHBoxLayout()
-        self.preset_name_input = QLineEdit()
-        self.preset_name_input.setPlaceholderText("Enter preset name...")
-        self.btn_save_preset = QPushButton("Save as Preset")
+        self.preset_name_input = ui.line_edit(placeholder="Enter preset name...")
+        self.btn_save_preset = ui.button("Save as Preset")
         self.btn_save_preset.clicked.connect(self.save_preset)
         preset_save_layout.addWidget(self.preset_name_input)
         preset_save_layout.addWidget(self.btn_save_preset)
 
         preset_layout.addRow("Select:", preset_select_layout)
         preset_layout.addRow("Name:", preset_save_layout)
-        preset_group.setLayout(preset_layout)
         layout.addWidget(preset_group)
 
         # ROI settings
-        roi_group = QGroupBox("ROI")
-        roi_layout = QFormLayout()
+        roi_group = ui.form_panel("ROI", [])
+        roi_layout = roi_group.layout()
 
-        self.roi_width = QSpinBox()
-        self.roi_width.setRange(MIN_ROI_WIDTH, MAX_OFFSET_X)
-        self.roi_width.setValue(640)
+        self.roi_width = ui.int_box(minimum=MIN_ROI_WIDTH, maximum=MAX_OFFSET_X, value=640)
 
-        self.roi_height = QSpinBox()
-        self.roi_height.setRange(MIN_ROI_HEIGHT, MAX_OFFSET_Y)
-        self.roi_height.setValue(480)
+        self.roi_height = ui.int_box(minimum=MIN_ROI_HEIGHT, maximum=MAX_OFFSET_Y, value=480)
 
-        self.roi_offset_x = QSpinBox()
-        self.roi_offset_x.setRange(0, MAX_OFFSET_X)
+        self.roi_offset_x = ui.int_box(minimum=0, maximum=MAX_OFFSET_X)
 
-        self.roi_offset_y = QSpinBox()
-        self.roi_offset_y.setRange(0, MAX_OFFSET_Y)
+        self.roi_offset_y = ui.int_box(minimum=0, maximum=MAX_OFFSET_Y)
 
-        self.binning_horizontal = QComboBox()
-        self.binning_horizontal.addItems(["1", "2", "3", "4"])
+        self.binning_horizontal = ui.combo_box(["1", "2", "3", "4"])
 
-        self.binning_vertical = QComboBox()
-        self.binning_vertical.addItems(["1", "2", "3", "4"])
+        self.binning_vertical = ui.combo_box(["1", "2", "3", "4"])
 
         # Offset sliders
-        self.offset_x_slider = QSlider(Qt.Orientation.Horizontal)
-        self.offset_x_slider.setRange(0, MAX_OFFSET_X)
-        self.offset_x_slider.setSingleStep(OFFSET_SLIDER_STEP)
-        self.offset_x_slider.setPageStep(OFFSET_SLIDER_STEP)
+        self.offset_x_slider = ui.slider(
+            maximum=MAX_OFFSET_X,
+            step=OFFSET_SLIDER_STEP,
+            page_step=OFFSET_SLIDER_STEP,
+        )
         self.offset_x_slider.valueChanged.connect(self.offset_x_changed.emit)
 
-        self.offset_y_slider = QSlider(Qt.Orientation.Horizontal)
-        self.offset_y_slider.setRange(0, MAX_OFFSET_Y)
-        self.offset_y_slider.setSingleStep(OFFSET_SLIDER_STEP)
-        self.offset_y_slider.setPageStep(OFFSET_SLIDER_STEP)
+        self.offset_y_slider = ui.slider(
+            maximum=MAX_OFFSET_Y,
+            step=OFFSET_SLIDER_STEP,
+            page_step=OFFSET_SLIDER_STEP,
+        )
         self.offset_y_slider.valueChanged.connect(self.offset_y_changed.emit)
 
         roi_layout.addRow("Width:", self.roi_width)
@@ -309,10 +293,10 @@ class SettingsWidget(QWidget):
         roi_layout.addRow("Binning V:", self.binning_vertical)
 
         ruler_layout = QHBoxLayout()
-        ruler_layout.addWidget(QLabel("Rulers:"))
-        self.ruler_v_check = QCheckBox("V")
-        self.ruler_h_check = QCheckBox("H")
-        self.ruler_radial_check = QCheckBox("Radial")
+        ruler_layout.addWidget(ui.status_label("Rulers:", kind="muted"))
+        self.ruler_v_check = ui.check_box("V")
+        self.ruler_h_check = ui.check_box("H")
+        self.ruler_radial_check = ui.check_box("Radial")
         self.ruler_v_check.toggled.connect(self._on_ruler_changed)
         self.ruler_h_check.toggled.connect(self._on_ruler_changed)
         self.ruler_radial_check.toggled.connect(self._on_ruler_changed)
@@ -325,14 +309,13 @@ class SettingsWidget(QWidget):
 
         # Add transform controls
         transform_layout = QHBoxLayout()
-        transform_layout.addWidget(QLabel("Flip:"))
-        self.flip_x_check = QCheckBox("X")
-        self.flip_y_check = QCheckBox("Y")
+        transform_layout.addWidget(ui.status_label("Flip:", kind="muted"))
+        self.flip_x_check = ui.check_box("X")
+        self.flip_y_check = ui.check_box("Y")
         transform_layout.addWidget(self.flip_x_check)
         transform_layout.addWidget(self.flip_y_check)
-        transform_layout.addWidget(QLabel("Rotate:"))
-        self.rotation_spin = QComboBox()
-        self.rotation_spin.addItems(["0", "90", "180", "270"])
+        transform_layout.addWidget(ui.status_label("Rotate:", kind="muted"))
+        self.rotation_spin = ui.combo_box(["0", "90", "180", "270"])
         transform_layout.addWidget(self.rotation_spin)
         transform_layout.addStretch()
 
@@ -343,53 +326,38 @@ class SettingsWidget(QWidget):
         self.flip_y_check.toggled.connect(self._on_transform_changed)
         self.rotation_spin.currentIndexChanged.connect(self._on_transform_changed)
 
-        roi_group.setLayout(roi_layout)
         layout.addWidget(roi_group)
 
         # Acquisition settings
-        acq_group = QGroupBox("Acquisition")
-        acq_layout = QFormLayout()
+        acq_group = ui.form_panel("Acquisition", [])
+        acq_layout = acq_group.layout()
 
-        self.exposure = QDoubleSpinBox()
-        self.exposure.setRange(10, 1000000)
-        self.exposure.setValue(150)
-        self.exposure.setSuffix(" μs")
+        self.exposure = ui.double_box(minimum=10, maximum=1000000, value=150, suffix=" μs")
 
-        self.gain = QDoubleSpinBox()
-        self.gain.setRange(0, 48)
-        self.gain.setValue(0)
+        self.gain = ui.double_box(minimum=0, maximum=48, value=0)
 
-        self.pixel_format = QComboBox()
-        self.pixel_format.addItems(["Mono8", "Mono10", "Mono10p"])
+        self.pixel_format = ui.combo_box(["Mono8", "Mono10", "Mono10p"])
 
-        self.sensor_mode = QComboBox()
-        self.sensor_mode.addItems(["Normal", "Fast"])
+        self.sensor_mode = ui.combo_box(["Normal", "Fast"])
 
         acq_layout.addRow("Exposure:", self.exposure)
         acq_layout.addRow("Gain:", self.gain)
         acq_layout.addRow("Pixel Format:", self.pixel_format)
         acq_layout.addRow("Sensor Mode:", self.sensor_mode)
 
-        acq_group.setLayout(acq_layout)
         layout.addWidget(acq_group)
 
         # Frame Rate Control
-        framerate_group = QGroupBox("Frame Rate Control")
-        framerate_layout = QFormLayout()
+        framerate_group = ui.form_panel("Frame Rate Control", [])
+        framerate_layout = framerate_group.layout()
 
-        self.framerate_enable = QCheckBox("Enable Frame Rate Limit")
-        self.framerate = QDoubleSpinBox()
-        self.framerate.setRange(1, 100000)
-        self.framerate.setValue(30)
-        self.framerate.setSuffix(" Hz")
+        self.framerate_enable = ui.check_box("Enable Frame Rate Limit")
+        self.framerate = ui.double_box(minimum=1, maximum=100000, value=30, suffix=" Hz")
         self.framerate.setEnabled(False)
         self.framerate_enable.toggled.connect(self.framerate.setEnabled)
 
-        self.throughput_enable = QCheckBox("Enable Throughput Limit")
-        self.throughput_limit = QDoubleSpinBox()
-        self.throughput_limit.setRange(1, 1000)
-        self.throughput_limit.setValue(125)
-        self.throughput_limit.setSuffix(" Mbps")
+        self.throughput_enable = ui.check_box("Enable Throughput Limit")
+        self.throughput_limit = ui.double_box(minimum=1, maximum=1000, value=125, suffix=" Mbps")
         self.throughput_limit.setEnabled(False)
         self.throughput_enable.toggled.connect(self.throughput_limit.setEnabled)
 
@@ -398,51 +366,40 @@ class SettingsWidget(QWidget):
         framerate_layout.addRow(self.throughput_enable)
         framerate_layout.addRow("Throughput:", self.throughput_limit)
 
-        framerate_group.setLayout(framerate_layout)
         layout.addWidget(framerate_group)
 
         # Capture settings (renamed from Output)
-        capture_group = QGroupBox("Capture")
-        capture_layout = QFormLayout()
+        capture_group = ui.form_panel("Capture", [])
+        capture_layout = capture_group.layout()
 
         # Mode selection
-        self.capture_mode = QComboBox()
-        self.capture_mode.addItems(["ROI Capture", "Waterfall"])
+        self.capture_mode = ui.combo_box(["ROI Capture", "Waterfall"])
         self.capture_mode.currentTextChanged.connect(self._on_mode_changed)
         capture_layout.addRow("Mode:", self.capture_mode)
 
         # Capture settings
-        self.output_path = QLineEdit("./output")
-        self.image_prefix = QLineEdit("img")
-        self.video_prefix = QLineEdit("vid")
+        self.output_path = ui.line_edit("./output")
+        self.image_prefix = ui.line_edit("img")
+        self.video_prefix = ui.line_edit("vid")
 
         capture_layout.addRow("Path:", self.output_path)
         capture_layout.addRow("Image Prefix:", self.image_prefix)
         capture_layout.addRow("Video Prefix:", self.video_prefix)
 
-        self.video_fps = QDoubleSpinBox()
-        self.video_fps.setRange(1, 120)
-        self.video_fps.setValue(24)
-        self.video_fps.setSuffix(" fps")
-        self.video_fps_label = QLabel("Video FPS:")
+        self.video_fps = ui.double_box(minimum=1, maximum=120, value=24, suffix=" fps")
+        self.video_fps_label = ui.status_label("Video FPS:", kind="muted", small=False)
         capture_layout.addRow(self.video_fps_label, self.video_fps)
 
-        self.preview_off = QCheckBox("Disable preview during recording")
-        self.preview_off.setChecked(True)
+        self.preview_off = ui.check_box("Disable preview during recording", checked=True)
         capture_layout.addRow("", self.preview_off)
 
-        self.limit_frames_enable = QCheckBox("Limit frames")
-        self.limit_frames = QSpinBox()
-        self.limit_frames.setRange(1, 1000000)
-        self.limit_frames.setValue(1000)
+        self.limit_frames_enable = ui.check_box("Limit frames")
+        self.limit_frames = ui.int_box(minimum=1, maximum=1000000, value=1000)
         self.limit_frames.setEnabled(False)
         self.limit_frames_enable.toggled.connect(self.limit_frames.setEnabled)
 
-        self.limit_time_enable = QCheckBox("Limit time")
-        self.limit_time = QDoubleSpinBox()
-        self.limit_time.setRange(0.1, 3600)
-        self.limit_time.setValue(10)
-        self.limit_time.setSuffix(" s")
+        self.limit_time_enable = ui.check_box("Limit time")
+        self.limit_time = ui.double_box(minimum=0.1, maximum=3600, value=10, suffix=" s")
         self.limit_time.setEnabled(False)
         self.limit_time_enable.toggled.connect(self.limit_time.setEnabled)
 
@@ -451,7 +408,6 @@ class SettingsWidget(QWidget):
         capture_layout.addRow(self.limit_time_enable)
         capture_layout.addRow("Max time:", self.limit_time)
 
-        capture_group.setLayout(capture_layout)
         layout.addWidget(capture_group)
 
         # Apply button
@@ -462,7 +418,6 @@ class SettingsWidget(QWidget):
         scroll.setWidget(content)
 
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(scroll)
         self.setLayout(main_layout)
 

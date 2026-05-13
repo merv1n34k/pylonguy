@@ -1,22 +1,15 @@
 """Preview widget - Camera display with zero-copy rendering"""
 
+import dropletui as ui
 from PySide6.QtCore import QRect, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QTransform
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QTransform
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
-    QHBoxLayout,
     QLabel,
-    QPushButton,
-    QSizePolicy,
 )
 import numpy as np
 import logging
-
-from ..constants import (
-    CONTROLS_MAX_HEIGHT,
-)
-from ..theme import Theme, button_qss, value_label_qss
 
 log = logging.getLogger("pylonguy")
 
@@ -57,12 +50,7 @@ class PreviewDisplay(QWidget):
         # Message display
         self.message = ""
 
-        # Setup widget
         self.setMouseTracking(True)
-        self.setAutoFillBackground(True)
-        pal = self.palette()
-        pal.setColor(self.backgroundRole(), Qt.GlobalColor.black)
-        self.setPalette(pal)
 
     def setFrame(self, frame: np.ndarray):
         """Frame update - returns False if buffer needs reinitialization"""
@@ -129,9 +117,6 @@ class PreviewDisplay(QWidget):
         # Draw message if set
         if self.message:
             painter.setPen(Qt.GlobalColor.white)
-            font = QFont()
-            font.setPointSize(20)
-            painter.setFont(font)
             painter.drawText(
                 self.rect(), Qt.AlignmentFlag.AlignCenter, self.message
             )
@@ -411,54 +396,22 @@ class PreviewDisplay(QWidget):
 class PreviewControls(QWidget):
     """Preview control panel - status and buttons"""
 
-    _BTN_DEFAULT = "QPushButton { border: none; border-radius: 0; }"
-    _BTN_GREEN = button_qss("success", flat=True)
-    _BTN_RED = button_qss("danger", flat=True)
-
     def __init__(self):
         super().__init__()
         self.init_ui()
 
     def _create_status_section(self, label_text: str, initial_value: str = "0"):
-        """Create a status section with label and value display.
-
-        Returns:
-            Tuple of (container widget, label widget, value widget)
-        """
-        widget = QWidget()
-        layout = QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        label = QLabel(f" {label_text} ")
-        label.setStyleSheet(
-            f"background: {Theme.LABEL_BG}; color: {Theme.LABEL_TEXT}; padding: 8px 10px; font-weight: bold;"
-        )
-
-        value = QLabel(f" {initial_value} ")
-        value.setStyleSheet(value_label_qss("success"))
-
-        layout.addWidget(label)
-        layout.addWidget(value, 1)
-        widget.setLayout(layout)
-
+        """Create a dropletui metric readout and expose its labels."""
+        widget = ui.metric_readout(label_text, initial_value, kind="success")
+        layout = widget.layout()
+        label = layout.itemAt(0).widget()
+        value = layout.itemAt(1).widget()
         return widget, label, value
 
     def init_ui(self):
         layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
 
         # Status bar
-        status_widget = QWidget()
-        status_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        status_widget.setStyleSheet(f"QWidget {{ background: {Theme.BG_DARK}; border-top: 1px solid {Theme.BORDER_COOL}; }}")
-
-        status_layout = QHBoxLayout()
-        status_layout.setContentsMargins(0, 0, 0, 0)
-        status_layout.setSpacing(0)
-
-        # Create status sections using factory method
         fps_widget, _, self.fps_value = self._create_status_section("FPS", "0.0")
         rec_widget, _, self.rec_status = self._create_status_section("REC", "OFF")
         frames_widget, self.frames_label, self.rec_frames = self._create_status_section("FRAMES", "0")
@@ -466,43 +419,28 @@ class PreviewControls(QWidget):
         roi_widget, _, self.roi_value = self._create_status_section("ROI", "---")
         sel_widget, _, self.sel_value = self._create_status_section("SEL", "None")
 
-        # Add all status sections
-        status_layout.addWidget(fps_widget, 1)
-        status_layout.addWidget(rec_widget, 1)
-        status_layout.addWidget(frames_widget, 1)
-        status_layout.addWidget(time_widget, 1)
-        status_layout.addWidget(roi_widget, 1)
-        status_layout.addWidget(sel_widget, 1)
-
-        status_widget.setLayout(status_layout)
+        status_widget = ui.hbox(
+            fps_widget,
+            rec_widget,
+            frames_widget,
+            time_widget,
+            roi_widget,
+            sel_widget,
+        )
         layout.addWidget(status_widget)
 
         # Control buttons
-        button_widget = QWidget()
-        button_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        button_widget.setStyleSheet(f"""
-            QWidget {{ background: {Theme.BG_DARK}; border-top: 1px solid {Theme.BORDER_COOL}; }}
-            QPushButton {{
-                border: none;
-                border-radius: 0;
-                padding: 8px 10px;
-            }}
-        """)
+        self.btn_live = ui.button("Start Live", flat=True)
+        self.btn_capture = ui.button("Capture", flat=True)
+        self.btn_record = ui.button("Record", flat=True)
+        self.btn_clear_selection = ui.button("Clear Selection", flat=True)
 
-        button_layout = QHBoxLayout()
-        button_layout.setContentsMargins(0, 0, 0, 0)
-        button_layout.setSpacing(1)
-
-        self.btn_live = QPushButton("Start Live")
-        self.btn_capture = QPushButton("Capture")
-        self.btn_record = QPushButton("Record")
-        self.btn_clear_selection = QPushButton("Clear Selection")
-
-        for btn in (self.btn_live, self.btn_capture, self.btn_record, self.btn_clear_selection):
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            button_layout.addWidget(btn, 1)
-
-        button_widget.setLayout(button_layout)
+        button_widget = ui.hbox(
+            self.btn_live,
+            self.btn_capture,
+            self.btn_record,
+            self.btn_clear_selection,
+        )
         layout.addWidget(button_widget)
 
         self.setLayout(layout)
@@ -515,10 +453,8 @@ class PreviewControls(QWidget):
         if "recording" in kwargs:
             if kwargs["recording"]:
                 self.rec_status.setText(" ON ")
-                self.rec_status.setStyleSheet(value_label_qss("danger"))
             else:
                 self.rec_status.setText(" OFF ")
-                self.rec_status.setStyleSheet(value_label_qss("success"))
 
         if "frames" in kwargs:
             self.rec_frames.setText(f" {kwargs['frames']} ")
@@ -555,18 +491,13 @@ class PreviewWidget(QWidget):
 
     def init_ui(self):
         layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
 
         # Display area
         self.display = PreviewDisplay()
-        self.display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        layout.addWidget(self.display)
+        layout.addWidget(self.display, 1)
 
         # Controls area
         self.controls = PreviewControls()
-        self.controls.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.controls.setMaximumHeight(CONTROLS_MAX_HEIGHT)
         layout.addWidget(self.controls)
 
         # Connect internal signals

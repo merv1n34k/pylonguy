@@ -3,6 +3,28 @@ revision = 3
 requires-python = ">=3.12"
 
 [[package]]
+name = "colorama"
+version = "0.4.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "dropletui"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyqtgraph" },
+    { name = "pyside6" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/73/33/3da3870f8eaa5703d7904649d86c0b59d5f30a85d8f20fa13086ec48bdb1/dropletui-0.1.1.tar.gz", hash = "sha256:833d4d35e972c4e756a6fc49be56e64962a8d5bb946761e6694e32c3314bfa31", size = 10635, upload-time = "2026-05-13T21:31:45.432Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7b/87/5984ccbfbff5fc8c280a98b35d7e449648d37731a4dc7478053c8090a35d/dropletui-0.1.1-py3-none-any.whl", hash = "sha256:95f99d09ece65e2aa18fbd493297e02a3da309c134614afdb02f1e22ffc13fa9", size = 13960, upload-time = "2026-05-13T21:31:44.355Z" },
+]
+
+[[package]]
 name = "numpy"
 version = "2.3.3"
 source = { registry = "https://pypi.org/simple" }
@@ -136,6 +158,7 @@ name = "pylonguy"
 version = "1.10.0"
 source = { editable = "." }
 dependencies = [
+    { name = "dropletui" },
     { name = "numpy" },
     { name = "pillow" },
     { name = "pypylon" },
@@ -144,6 +167,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dropletui", specifier = ">=0.1.1" },
     { name = "numpy", specifier = ">=2.3.3" },
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "pypylon", specifier = ">=4.2.0" },
@@ -160,6 +184,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/34/3c/4cfae184eb81c225769d25f38a686de529f5fc3759822b9d86095b8b7bc7/pypylon-4.2.0-cp39-abi3-manylinux_2_31_aarch64.whl", hash = "sha256:3a4ba03737d8f70d734577875a387e086ae74ecd165650c0f1141d37bcaf2468", size = 77101763, upload-time = "2025-06-02T11:26:15.436Z" },
     { url = "https://files.pythonhosted.org/packages/c6/cc/2d06b6f3c73808d8e7aff5de954e3ee9ce7a2532be9ea6b62427ac01eece/pypylon-4.2.0-cp39-abi3-manylinux_2_31_x86_64.whl", hash = "sha256:d66b7367e1ddd0b312b785bbc9688de5a2d5f4f083e095084bf5a4a978729d8f", size = 88565547, upload-time = "2025-06-02T11:25:42.34Z" },
     { url = "https://files.pythonhosted.org/packages/9e/85/fb75dafe3ad1b928930efb753c97aec79efe74fbdc1a590516e5e96e01ca/pypylon-4.2.0-cp39-abi3-win_amd64.whl", hash = "sha256:a7a13978f1a8e352b9cecc1334eef06e0bb0262e58dfa4de9bc317c5b8afaf1d", size = 95812459, upload-time = "2025-06-02T11:27:31.648Z" },
+]
+
+[[package]]
+name = "pyqtgraph"
+version = "0.14.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama" },
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/36/4c242f81fdcbfa4fb62a5645f6af79191f4097a0577bd5460c24f19cc4ef/pyqtgraph-0.14.0-py3-none-any.whl", hash = "sha256:7abb7c3e17362add64f8711b474dffac5e7b0e9245abdf992e9a44119b7aa4f5", size = 1924755, upload-time = "2025-11-16T19:43:22.251Z" },
 ]
 
 [[package]]

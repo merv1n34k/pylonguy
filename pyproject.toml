@@ -5,11 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "pylonguy"
 version = "1.10.0"
-description = "PySide6 wrapper for pypylon SDK for Basler camera manipulation, aimed for microfluidics and slow motion."
+description = "DropletUI frontend for pypylon SDK for Basler camera manipulation, aimed for microfluidics and slow motion."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
+    "dropletui>=0.1.1",
     "numpy>=2.3.3",
     "pillow>=11.3.0",
     "pypylon>=4.2.0",

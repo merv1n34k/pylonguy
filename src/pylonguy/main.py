@@ -7,9 +7,10 @@ import time
 import logging
 import numpy as np
 from pathlib import Path
+import dropletui as ui
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon, QImage
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from .camera import Camera
 from .ui import MainWindow
@@ -22,8 +23,8 @@ from .constants import (
     SIGNAL_TIMER_INTERVAL_MS,
     MAX_OFFSET_X,
     MAX_OFFSET_Y,
+    OFFSET_SLIDER_STEP,
 )
-from .theme import GLOBAL_QSS
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -275,6 +276,19 @@ class PylonApp:
 
         return result
 
+    def _snap_roi_offset(self, value: int) -> int:
+        """Snap ROI offsets to the slider/camera step used by DropletSlider."""
+        return round(int(value) / OFFSET_SLIDER_STEP) * OFFSET_SLIDER_STEP
+
+    def _snap_roi_offset_min(self, value: int) -> int:
+        """Snap a slider lower bound up to the next valid ROI offset."""
+        value = int(value)
+        return (
+            (value + OFFSET_SLIDER_STEP - 1)
+            // OFFSET_SLIDER_STEP
+            * OFFSET_SLIDER_STEP
+        )
+
     def start_live(self):
         """Start live preview"""
         if not self._require_camera():
@@ -294,7 +308,6 @@ class PylonApp:
         self.thread.start()
 
         self.window.preview.btn_live.setText("Stop Live")
-        self.window.preview.btn_live.setStyleSheet(self.window.preview.controls._BTN_GREEN)
         log.debug(
             "Live preview started"
             + (" (Waterfall mode)" if self.waterfall_mode else "")
@@ -312,7 +325,6 @@ class PylonApp:
         self.estimated_fps = 0.0
 
         self.window.preview.btn_live.setText("Start Live")
-        self.window.preview.btn_live.setStyleSheet(self.window.preview.controls._BTN_DEFAULT)
         self.window.preview.update_status(fps=0, recording=False, frames=0, elapsed=0)
         self.window.preview.show_message("No Camera")
         log.debug("Live preview stopped")
@@ -379,14 +391,16 @@ class PylonApp:
             offset_y_info = self.camera.get_parameter("OffsetY")
             if offset_x_info:
                 self.window.settings.offset_x_slider.setRange(
-                    offset_x_info.get("min", 0), MAX_OFFSET_X
+                    self._snap_roi_offset_min(offset_x_info.get("min", 0)),
+                    MAX_OFFSET_X,
                 )
                 self.window.settings.offset_x_slider.setValue(
                     offset_x_info.get("value", 0)
                 )
             if offset_y_info:
                 self.window.settings.offset_y_slider.setRange(
-                    offset_y_info.get("min", 0), MAX_OFFSET_Y
+                    self._snap_roi_offset_min(offset_y_info.get("min", 0)),
+                    MAX_OFFSET_Y,
                 )
                 self.window.settings.offset_y_slider.setValue(
                     offset_y_info.get("value", 0)
@@ -449,7 +463,10 @@ class PylonApp:
             cam_settings = {}
 
             # ROI settings - handle in correct order
-            if settings["roi"]["offset_x"] != 0 or settings["roi"]["offset_y"] != 0:
+            offset_x = self._snap_roi_offset(settings["roi"]["offset_x"])
+            offset_y = self._snap_roi_offset(settings["roi"]["offset_y"])
+
+            if offset_x != 0 or offset_y != 0:
                 self.camera.set_parameter("OffsetX", 0)
                 self.camera.set_parameter("OffsetY", 0)
 
@@ -457,8 +474,8 @@ class PylonApp:
             cam_settings["Height"] = (
                 1 if self.waterfall_mode else settings["roi"]["height"]
             )
-            cam_settings["OffsetX"] = settings["roi"]["offset_x"]
-            cam_settings["OffsetY"] = settings["roi"]["offset_y"]
+            cam_settings["OffsetX"] = offset_x
+            cam_settings["OffsetY"] = offset_y
 
             # Only apply binning if supported
             if self.window.settings.binning_horizontal.isEnabled():
@@ -532,16 +549,6 @@ class PylonApp:
 
     def capture_frame(self):
         """Capture single frame or waterfall with transforms applied"""
-        # Flash capture button red
-        btn = self.window.preview.btn_capture
-        btn.setStyleSheet(self.window.preview.controls._BTN_RED)
-        from PySide6.QtCore import QTimer
-
-        QTimer.singleShot(
-            300,
-            lambda: btn.setStyleSheet(self.window.preview.controls._BTN_DEFAULT),
-        )
-
         if self.waterfall_mode:
             # Capture from waterfall buffer
             frame = self.window.preview.get_waterfall_buffer()
@@ -670,7 +677,6 @@ class PylonApp:
 
         if self.thread.start_recording(worker, max_frames, max_time):
             self.window.preview.btn_record.setText("Stop Recording")
-            self.window.preview.btn_record.setStyleSheet(self.window.preview.controls._BTN_RED)
             if self.waterfall_mode:
                 log.info(
                     f"Waterfall recording started: {worker.output_path if hasattr(worker, 'output_path') else 'waterfall'}"
@@ -685,7 +691,6 @@ class PylonApp:
         if self.thread:
             frames = self.thread.stop_recording()
             self.window.preview.btn_record.setText("Record")
-            self.window.preview.btn_record.setStyleSheet(self.window.preview.controls._BTN_DEFAULT)
 
             self.window.settings.setLocked(False)
 
@@ -708,14 +713,10 @@ class PylonApp:
     def _on_selection_changed(self, rect):
         """Handle selection changes"""
         self.current_selection = rect
-        btn = self.window.preview.controls.btn_clear_selection
-        if rect and rect.isValid():
-            btn.setStyleSheet(self.window.preview.controls._BTN_RED)
-        else:
-            btn.setStyleSheet(self.window.preview.controls._BTN_DEFAULT)
 
     def _on_offset_x_changed(self, value):
         """Handle X offset slider change"""
+        value = self._snap_roi_offset(value)
         if self.camera.device:
             # Update camera immediately
             self.camera.set_parameter("OffsetX", value)
@@ -724,6 +725,7 @@ class PylonApp:
 
     def _on_offset_y_changed(self, value):
         """Handle Y offset slider change"""
+        value = self._snap_roi_offset(value)
         if self.camera.device:
             # Update camera immediately
             self.camera.set_parameter("OffsetY", value)
@@ -753,11 +755,7 @@ def check_dependencies():
 
 def main():
     """Main entry point"""
-    app = QApplication(sys.argv)
-    app.setApplicationName("PylonGuy")
-    app.setApplicationDisplayName("PylonGuy")
-    app.setStyle("Fusion")
-    app.setStyleSheet(GLOBAL_QSS)
+    app = ui.create_app("PylonGuy", sys.argv)
 
     # Set application icon
     icon_path = Path(__file__).parent / "assets" / "icon.ico"
