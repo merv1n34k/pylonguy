@@ -13,15 +13,15 @@ wheels = [
 
 [[package]]
 name = "dropletui"
-version = "0.1.1"
+version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyqtgraph" },
     { name = "pyside6" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/73/33/3da3870f8eaa5703d7904649d86c0b59d5f30a85d8f20fa13086ec48bdb1/dropletui-0.1.1.tar.gz", hash = "sha256:833d4d35e972c4e756a6fc49be56e64962a8d5bb946761e6694e32c3314bfa31", size = 10635, upload-time = "2026-05-13T21:31:45.432Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/38/cc/e4977697e33e56a349a87bd6504446b54a8caa390d35638b89ee5a55ee55/dropletui-0.1.2.tar.gz", hash = "sha256:3fa2fa7bab6064a21ccbfe7b2aef4717762b9dcd6837da66b2033929b056da9c", size = 11567, upload-time = "2026-06-10T12:14:22.628Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7b/87/5984ccbfbff5fc8c280a98b35d7e449648d37731a4dc7478053c8090a35d/dropletui-0.1.1-py3-none-any.whl", hash = "sha256:95f99d09ece65e2aa18fbd493297e02a3da309c134614afdb02f1e22ffc13fa9", size = 13960, upload-time = "2026-05-13T21:31:44.355Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/7e/c1efc51cec99dc17be4deae2ecc6e02aa9156bb0d1ebf02f4fb98986fb3f/dropletui-0.1.2-py3-none-any.whl", hash = "sha256:87836fdd33191d13900b39f1b1f7ebf8b8ee3c51f4c40291538fa1a1ae9a6757", size = 15056, upload-time = "2026-06-10T12:14:21.44Z" },
 ]
 
 [[package]]
@@ -155,7 +155,7 @@ wheels = [
 
 [[package]]
 name = "pylonguy"
-version = "2.0.0"
+version = "2.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "dropletui" },
@@ -167,7 +167,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dropletui", specifier = ">=0.1.1" },
+    { name = "dropletui", specifier = ">=0.1.2" },
     { name = "numpy", specifier = ">=2.3.3" },
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "pypylon", specifier = ">=4.2.0" },

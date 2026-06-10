@@ -3,7 +3,7 @@
 import dropletui as ui
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
+    QWidget, QVBoxLayout,
     QComboBox, QSpinBox, QDoubleSpinBox,
     QScrollArea,
 )
@@ -207,49 +207,36 @@ class SettingsWidget(QWidget):
         # Connection controls
         conn_group, conn_layout = ui.section("Connection")
 
-        # First row: Camera selection and load defaults checkbox
-        select_layout = QHBoxLayout()
         self.camera_combo = ui.combo_box(["Detecting..."])
-        select_layout.addWidget(self.camera_combo, 1)
         self.btn_refresh = ui.button("Refresh")
-        select_layout.addWidget(self.btn_refresh)
         self.auto_apply_check = ui.check_box("Auto-apply", checked=True)
-        select_layout.addWidget(self.auto_apply_check)
 
-        # Second row: Connect and Disconnect buttons
-        button_layout = QHBoxLayout()
         self.btn_connect = ui.button("Connect", variant="success")
         self.btn_disconnect = ui.button("Disconnect", variant="danger")
-        button_layout.addWidget(self.btn_connect)
-        button_layout.addWidget(self.btn_disconnect)
 
-        conn_layout.addLayout(select_layout)
-        conn_layout.addLayout(button_layout)
+        conn_layout.addWidget(
+            ui.field_row(self.camera_combo, self.btn_refresh, self.auto_apply_check)
+        )
+        conn_layout.addWidget(
+            ui.button_row(self.btn_connect, self.btn_disconnect, align="left")
+        )
         layout.addWidget(conn_group)
 
         # Preset controls
         preset_group = ui.form_panel("Presets", [])
         preset_layout = preset_group.layout()
 
-        # First row: select preset and apply button
-        preset_select_layout = QHBoxLayout()
         self.preset_combo = ui.combo_box()
         self.preset_combo.addItems(sorted(self.presets.keys()))
         self.btn_apply_preset = ui.button("Apply Preset", variant="primary")
         self.btn_apply_preset.clicked.connect(self.apply_preset)
-        preset_select_layout.addWidget(self.preset_combo)
-        preset_select_layout.addWidget(self.btn_apply_preset)
 
-        # Second row: preset name and save button
-        preset_save_layout = QHBoxLayout()
         self.preset_name_input = ui.line_edit(placeholder="Enter preset name...")
         self.btn_save_preset = ui.button("Save as Preset")
         self.btn_save_preset.clicked.connect(self.save_preset)
-        preset_save_layout.addWidget(self.preset_name_input)
-        preset_save_layout.addWidget(self.btn_save_preset)
 
-        preset_layout.addRow("Select:", preset_select_layout)
-        preset_layout.addRow("Name:", preset_save_layout)
+        preset_layout.addRow("Select:", ui.field_row(self.preset_combo, self.btn_apply_preset))
+        preset_layout.addRow("Name:", ui.field_row(self.preset_name_input, self.btn_save_preset))
         layout.addWidget(preset_group)
 
         # ROI settings
@@ -292,34 +279,33 @@ class SettingsWidget(QWidget):
         roi_layout.addRow("Binning H:", self.binning_horizontal)
         roi_layout.addRow("Binning V:", self.binning_vertical)
 
-        ruler_layout = QHBoxLayout()
-        ruler_layout.addWidget(ui.status_label("Rulers:", kind="muted"))
         self.ruler_v_check = ui.check_box("V")
         self.ruler_h_check = ui.check_box("H")
         self.ruler_radial_check = ui.check_box("Radial")
         self.ruler_v_check.toggled.connect(self._on_ruler_changed)
         self.ruler_h_check.toggled.connect(self._on_ruler_changed)
         self.ruler_radial_check.toggled.connect(self._on_ruler_changed)
-        ruler_layout.addWidget(self.ruler_v_check)
-        ruler_layout.addWidget(self.ruler_h_check)
-        ruler_layout.addWidget(self.ruler_radial_check)
-        ruler_layout.addStretch()
 
-        roi_layout.addRow("Rulers:", ruler_layout)
+        roi_layout.addRow(
+            "Rulers:",
+            ui.field_row(self.ruler_v_check, self.ruler_h_check, self.ruler_radial_check),
+        )
 
         # Add transform controls
-        transform_layout = QHBoxLayout()
-        transform_layout.addWidget(ui.status_label("Flip:", kind="muted"))
         self.flip_x_check = ui.check_box("X")
         self.flip_y_check = ui.check_box("Y")
-        transform_layout.addWidget(self.flip_x_check)
-        transform_layout.addWidget(self.flip_y_check)
-        transform_layout.addWidget(ui.status_label("Rotate:", kind="muted"))
         self.rotation_spin = ui.combo_box(["0", "90", "180", "270"])
-        transform_layout.addWidget(self.rotation_spin)
-        transform_layout.addStretch()
 
-        roi_layout.addRow("Transform:", transform_layout)
+        roi_layout.addRow(
+            "Transform:",
+            ui.field_row(
+                ui.status_label("Flip:", kind="muted"),
+                self.flip_x_check,
+                self.flip_y_check,
+                ui.status_label("Rotate:", kind="muted"),
+                self.rotation_spin,
+            ),
+        )
 
         # Connect transform signals
         self.flip_x_check.toggled.connect(self._on_transform_changed)

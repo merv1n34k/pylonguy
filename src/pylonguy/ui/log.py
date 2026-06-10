@@ -5,7 +5,6 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
-    QHBoxLayout,
     QTextEdit,
 )
 from pathlib import Path
@@ -29,28 +28,25 @@ class LogWidget(QWidget):
         layout = QVBoxLayout()
 
         # Header with controls
-        header_layout = QHBoxLayout()
-
-        header_layout.addWidget(ui.status_label("Log", kind="default", small=False))
-        header_layout.addStretch()
-
-        # Log level selector
         self.level_combo = ui.combo_box(["INFO", "DEBUG"])
         self.level_combo.setCurrentText("INFO")
         # Don't connect here - let app.py handle it
-        header_layout.addWidget(ui.status_label("Level:", kind="muted"))
-        header_layout.addWidget(self.level_combo)
 
-        # Control buttons
         self.btn_clear = ui.button("Clear")
         self.btn_clear.clicked.connect(self.clear_log)
-        header_layout.addWidget(self.btn_clear)
 
         self.btn_save = ui.button("Save", variant="primary")
         self.btn_save.clicked.connect(self.save_log)
-        header_layout.addWidget(self.btn_save)
 
-        layout.addLayout(header_layout)
+        layout.addWidget(
+            ui.field_row(
+                ui.status_label("Log", kind="default", small=False),
+                ui.status_label("Level:", kind="muted"),
+                self.level_combo,
+                self.btn_clear,
+                self.btn_save,
+            )
+        )
 
         # Log display
         self.log = QTextEdit()
